@@ -17,7 +17,6 @@
 #include "template/concept.hpp"
 #include "template/check-action.moc.hpp"
 #include "template/file-dialog.moc.hpp"
-#include "template/hex-editor.moc.hpp"
 #include "template/radio-action.moc.hpp"
 #include "template/window.moc.hpp"
 using namespace nall;
@@ -42,12 +41,14 @@ using namespace ruby;
 #if defined(DEBUGGER)
   #include "debugger/debugger.moc.hpp"
   #include "debugger/tracer.moc.hpp"
+  #include "debugger/registeredit.moc.hpp"
 
   #include "debugger/tools/disassembler.moc.hpp"
   #include "debugger/tools/breakpoint.moc.hpp"
   #include "debugger/tools/memory.moc.hpp"
   #include "debugger/tools/properties.moc.hpp"
 
+  #include "debugger/ppu/cgram-widget.moc.hpp"
   #include "debugger/ppu/vram-viewer.moc.hpp"
   #include "debugger/ppu/oam-viewer.moc.hpp"
   #include "debugger/ppu/cgram-viewer.moc.hpp"
@@ -79,6 +80,7 @@ using namespace ruby;
 #include "tools/cheatfinder.moc.hpp"
 #include "tools/statemanager.moc.hpp"
 #include "tools/effecttoggle.moc.hpp"
+#include "tools/soundviewer.moc.hpp"
 
 #include "utility/utility.hpp"
 

@@ -191,14 +191,14 @@ void SPC7110::update_time(int offset) {
 }
 
 uint8 SPC7110::mmio_read(unsigned addr) {
-  addr &= 0xffff;
-
   switch(addr) {
     //==================
     //decompression unit
     //==================
 
     case 0x4800: {
+      if(Memory::debugger_access()) return 0x00;
+    
       uint16 counter = (r4809 + (r480a << 8));
       counter--;
       r4809 = counter;
@@ -218,7 +218,8 @@ uint8 SPC7110::mmio_read(unsigned addr) {
     case 0x480b: return r480b;
     case 0x480c: {
       uint8 status = r480c;
-      r480c &= 0x7f;
+      if(!Memory::debugger_access())
+        r480c &= 0x7f;
       return status;
     }
 
@@ -227,7 +228,7 @@ uint8 SPC7110::mmio_read(unsigned addr) {
     //==============
 
     case 0x4810: {
-      if(r481x != 0x07) return 0x00;
+      if(Memory::debugger_access() || (r481x != 0x07)) return 0x00;
 
       unsigned addr = data_pointer();
       unsigned adjust = data_adjust();
@@ -262,7 +263,7 @@ uint8 SPC7110::mmio_read(unsigned addr) {
     case 0x4817: return r4817;
     case 0x4818: return r4818;
     case 0x481a: {
-      if(r481x != 0x07) return 0x00;
+      if(Memory::debugger_access() || (r481x != 0x07)) return 0x00;
 
       unsigned addr = data_pointer();
       unsigned adjust = data_adjust();
@@ -301,7 +302,8 @@ uint8 SPC7110::mmio_read(unsigned addr) {
     case 0x482e: return r482e;
     case 0x482f: {
       uint8 status = r482f;
-      r482f &= 0x7f;
+      if(!Memory::debugger_access())
+        r482f &= 0x7f;
       return status;
     }
 
@@ -323,14 +325,17 @@ uint8 SPC7110::mmio_read(unsigned addr) {
     case 0x4841: {
       if(rtc_state == RTCS_Inactive || rtc_state == RTCS_ModeSelect) return 0x00;
 
-      r4842 = 0x80;
+      if(!Memory::debugger_access())
+        r4842 = 0x80;
       uint8 data = memory::cartrtc.read(rtc_index);
-      rtc_index = (rtc_index + 1) & 15;
+      if(!Memory::debugger_access())
+        rtc_index = (rtc_index + 1) & 15;
       return data;
     }
     case 0x4842: {
       uint8 status = r4842;
-      r4842 &= 0x7f;
+      if(!Memory::debugger_access())
+        r4842 &= 0x7f;
       return status;
     }
   }
@@ -339,8 +344,6 @@ uint8 SPC7110::mmio_read(unsigned addr) {
 }
 
 void SPC7110::mmio_write(unsigned addr, uint8 data) {
-  addr &= 0xffff;
-
   switch(addr) {
     //==================
     //decompression unit
@@ -650,6 +653,9 @@ uint8 SPC7110MCU::read(unsigned addr) {
 }
 
 void SPC7110MCU::write(unsigned addr, uint8 data) {
+  if(addr <= 0xdfffff) memory::cartrom.write(spc7110.dx_offset + (addr & 0x0fffff), data);
+  else if(addr <= 0xefffff) memory::cartrom.write(spc7110.ex_offset + (addr & 0x0fffff), data);
+  else if(addr <= 0xffffff) memory::cartrom.write(spc7110.fx_offset + (addr & 0x0fffff), data);
 }
 
 //==========
@@ -657,7 +663,8 @@ void SPC7110MCU::write(unsigned addr, uint8 data) {
 //==========
 
 uint8 SPC7110DCU::read(unsigned) {
-  return spc7110.mmio_read(0x4800);
+  if(!Memory::debugger_access()) return spc7110.mmio_read(0x4800);
+  return 0;
 }
 
 void SPC7110DCU::write(unsigned, uint8) {
@@ -668,15 +675,15 @@ void SPC7110DCU::write(unsigned, uint8) {
 //==========
 
 unsigned SPC7110RAM::size() const {
-  return 0x2000;
+  return memory::cartram.size();
 }
 
 uint8 SPC7110RAM::read(unsigned addr) {
-  return memory::cartram.read(addr & 0x1fff);
+  return memory::cartram.read(addr);
 }
 
 void SPC7110RAM::write(unsigned addr, uint8 data) {
-  if(spc7110.r4830 & 0x80) memory::cartram.write(addr & 0x1fff, data);
+  if(spc7110.r4830 & 0x80) memory::cartram.write(addr, data);
 }
 
 }

@@ -44,8 +44,6 @@ void SuperGameBoy::save() {
 }
 
 uint8 SuperGameBoy::mmio_read(unsigned addr) {
-  addr &= 0xffff;
-
   if(addr == 0x2181) return mmio[0]->mmio_read(addr);
   if(addr == 0x2182) return mmio[1]->mmio_read(addr);
   if(addr == 0x420b) return mmio[2]->mmio_read(addr);
@@ -54,8 +52,6 @@ uint8 SuperGameBoy::mmio_read(unsigned addr) {
 }
 
 void SuperGameBoy::mmio_write(unsigned addr, uint8 data) {
-  addr &= 0xffff;
-
   if(addr == 0x2181) {
     row = (row & 0xff00) | (data << 0);
     mmio[0]->mmio_write(addr, data);
@@ -76,12 +72,12 @@ void SuperGameBoy::mmio_write(unsigned addr, uint8 data) {
 }
 
 uint8 SuperGameBoy::read(unsigned addr) {
-  if(sgb_read) return sgb_read(addr);
+  if(sgb_read && !Memory::debugger_access()) return sgb_read(addr);
   return 0x00;
 }
 
 void SuperGameBoy::write(unsigned addr, uint8 data) {
-  if(sgb_write) sgb_write(addr, data);
+  if(sgb_write && !Memory::debugger_access()) sgb_write(addr, data);
 }
 
 void SuperGameBoy::init() {
@@ -118,9 +114,9 @@ void SuperGameBoy::power() {
   audio.coprocessor_enable(true);
   audio.coprocessor_frequency(cartridge.supergameboy_version() == Cartridge::SuperGameBoyVersion::Version1 ? 2147727.0 : 2097152.0);
 
-  sgb_rom(memory::gbrom.data(), memory::gbrom.size() == -1U ? 0 : memory::gbrom.size());
-  sgb_ram(memory::gbram.data(), memory::gbram.size() == -1U ? 0 : memory::gbram.size());
-  sgb_rtc(memory::gbrtc.data(), memory::gbrtc.size() == -1U ? 0 : memory::gbrtc.size());
+  sgb_rom(memory::gbrom.data(), memory::gbrom.size());
+  sgb_ram(memory::gbram.data(), memory::gbram.size());
+  sgb_rtc(memory::gbrtc.data(), memory::gbrtc.size());
 
   bool version = (cartridge.supergameboy_version() == Cartridge::SuperGameBoyVersion::Version1) ? 0 : 1;
   if(sgb_init) sgb_init(version);

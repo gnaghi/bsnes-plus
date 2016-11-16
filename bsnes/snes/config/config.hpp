@@ -3,6 +3,7 @@ struct Configuration {
   Input::Device controller_port2;
   System::ExpansionPortDevice expansion_port;
   System::Region region;
+  bool random;
 
   struct CPU {
     unsigned version;
@@ -23,10 +24,6 @@ struct Configuration {
   struct PPU2 {
     unsigned version;
   } ppu2;
-
-  struct SuperFX {
-    unsigned speed;
-  } superfx;
 
   Configuration();
 };

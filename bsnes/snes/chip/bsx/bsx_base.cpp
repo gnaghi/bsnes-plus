@@ -6,7 +6,7 @@ void BSXBase::init() {
 }
 
 void BSXBase::enable() {
-  for(uint16 i = 0x2188; i <= 0x219f; i++) memory::mmio.map(i, *this);
+  memory::mmio.map(0x2188, 0x219f, *this);
 }
 
 void BSXBase::power() {
@@ -18,8 +18,6 @@ void BSXBase::reset() {
 }
 
 uint8 BSXBase::mmio_read(unsigned addr) {
-  addr &= 0xffff;
-
   switch(addr) {
     case 0x2188: return regs.r2188;
     case 0x2189: return regs.r2189;
@@ -30,17 +28,21 @@ uint8 BSXBase::mmio_read(unsigned addr) {
     case 0x2190: return regs.r2190;
 
     case 0x2192: {
-      unsigned counter = regs.r2192_counter++;
-      if(regs.r2192_counter >= 18) regs.r2192_counter = 0;
+      unsigned counter = regs.r2192_counter;
+      
+      if(!Memory::debugger_access()) {
+        regs.r2192_counter++;
+        if(regs.r2192_counter >= 18) regs.r2192_counter = 0;
 
-      if(counter == 0) {
-        time_t rawtime;
-        time(&rawtime);
-        tm *t = localtime(&rawtime);
+        if(counter == 0) {
+          time_t rawtime;
+          time(&rawtime);
+          tm *t = localtime(&rawtime);
 
-        regs.r2192_hour   = t->tm_hour;
-        regs.r2192_minute = t->tm_min;
-        regs.r2192_second = t->tm_sec;
+          regs.r2192_hour   = t->tm_hour;
+          regs.r2192_minute = t->tm_min;
+          regs.r2192_second = t->tm_sec;
+        }
       }
 
       switch(counter) {
@@ -76,8 +78,6 @@ uint8 BSXBase::mmio_read(unsigned addr) {
 }
 
 void BSXBase::mmio_write(unsigned addr, uint8 data) {
-  addr &= 0xffff;
-
   switch(addr) {
     case 0x2188: {
       regs.r2188 = data;

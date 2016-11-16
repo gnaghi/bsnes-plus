@@ -3,7 +3,12 @@
 #define DSP_CPP
 namespace SNES {
 
-DSP dsp;
+#if defined(DEBUGGER)
+  #include "../../dsp/debugger/debugger.cpp"
+  DSPDebugger dsp;
+#else
+  DSP dsp;
+#endif
 
 #include "serialization.cpp"
 #include "SPC_DSP.cpp"
@@ -29,6 +34,10 @@ void DSP::enter() {
     for(unsigned n = 0; n < count; n += 2) audio.sample(samplebuffer[n + 0], samplebuffer[n + 1]);
     spc_dsp.set_output(samplebuffer, 8192);
   }
+}
+
+bool DSP::mute() {
+  return spc_dsp.mute();
 }
 
 uint8 DSP::read(uint8 addr) {

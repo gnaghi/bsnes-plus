@@ -1,9 +1,9 @@
 namespace SNES {
   namespace Info {
     static const char Name[] = "bsnes-plus";
-    static const char Version[] = "073u1";
+    static const char Version[] = "073+2";
     static const unsigned SerializerSignature = 0x43545342; //'BSTC'
-    static const unsigned SerializerVersion = 3;
+    static const unsigned SerializerVersion = 7;
   }
 }
 
@@ -25,6 +25,7 @@ namespace SNES {
 #include <nall/platform.hpp>
 #include <nall/priorityqueue.hpp>
 #include <nall/property.hpp>
+#include <nall/random.hpp>
 #include <nall/serializer.hpp>
 #include <nall/stdint.hpp>
 #include <nall/string.hpp>
@@ -106,6 +107,11 @@ namespace SNES {
 
   struct ChipDebugger {
     virtual bool property(unsigned id, string &name, string &value) = 0;
+    
+    virtual unsigned getRegister(unsigned id) {return 0;}
+    virtual void     setRegister(unsigned id, unsigned value) {}
+    virtual bool     getFlag(unsigned id) {return false;}
+    virtual void     setFlag(unsigned id, bool value) {}
   };
 
   #include <memory/memory.hpp>

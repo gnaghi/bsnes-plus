@@ -144,14 +144,13 @@ void PPU::Background::run(bool screen) {
     if(hires == false) return;
   }
 
-  if(regs.mode == Mode::Inactive) return;
-  if(regs.mode == Mode::Mode7) return run_mode7();
-
   if(tile_counter-- == 0) {
     tile_counter = 7;
     get_tile();
   }
-
+  
+  if(regs.mode == Mode::Mode7) return run_mode7();
+  
   uint8 palette = get_tile_color();
   if(x == 0) mosaic_hcounter = 1;
   if(x >= 0 && --mosaic_hcounter == 0) {
@@ -163,6 +162,7 @@ void PPU::Background::run(bool screen) {
   if(screen == Screen::Main) x++;
   if(mosaic_palette == 0) return;
 
+  if(regs.mode == Mode::Inactive) return;
   if(hires == false) {
     if(regs.main_enable) {
       output.main.priority = mosaic_priority;
@@ -212,18 +212,18 @@ unsigned PPU::Background::get_tile_color() {
 }
 
 void PPU::Background::reset() {
-  regs.tiledata_addr = 0;
-  regs.screen_addr = 0;
-  regs.screen_size = 0;
-  regs.mosaic = 0;
-  regs.tile_size = 0;
+  regs.tiledata_addr = (random(0) & 0x0f) << 12;
+  regs.screen_addr = (random(0) & 0xfc) << 8;
+  regs.screen_size = random(0);
+  regs.mosaic = random(0);
+  regs.tile_size = random(0);
   regs.mode = 0;
   regs.priority0 = 0;
   regs.priority1 = 0;
-  regs.main_enable = 0;
-  regs.sub_enable = 0;
-  regs.hoffset = 0;
-  regs.voffset = 0;
+  regs.main_enable = random(0);
+  regs.sub_enable = random(0);
+  regs.hoffset = random(0);
+  regs.voffset = random(0);
 
   output.main.palette = 0;
   output.main.priority = 0;

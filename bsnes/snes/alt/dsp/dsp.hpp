@@ -1,11 +1,14 @@
 #include "SPC_DSP.h"
 
-class DSP : public Processor, public ChipDebugger {
+class DSP : public Processor {
 public:
   enum : bool { Threaded = false };
+  enum : bool { SupportsChannelEnable = true };
+
   alwaysinline void step(unsigned clocks);
   alwaysinline void synchronize_smp();
 
+  bool mute();
   uint8 read(uint8 addr);
   void write(uint8 addr, uint8 data);
 
@@ -16,7 +19,6 @@ public:
   void channel_enable(unsigned channel, bool enable);
 
   void serialize(serializer&);
-  bool property(unsigned id, string &name, string &value) { return false; }
   DSP();
 
 private:
@@ -25,4 +27,9 @@ private:
   bool channel_enabled[8];
 };
 
-extern DSP dsp;
+#if defined(DEBUGGER)
+  #include "../../dsp/debugger/debugger.hpp"
+  extern DSPDebugger dsp;
+#else
+  extern DSP dsp;
+#endif

@@ -41,25 +41,25 @@ void SDD1::reset() {
 }
 
 uint8 SDD1::mmio_read(unsigned addr) {
-  addr &= 0xffff;
-
   if((addr & 0x4380) == 0x4300) {
     return cpu_mmio[addr & 0x7f]->mmio_read(addr);
   }
 
   switch(addr) {
+    case 0x4800: return sdd1_enable;
+    case 0x4801: return xfer_enable;
+
     case 0x4804: return mmc[0] >> 20;
     case 0x4805: return mmc[1] >> 20;
     case 0x4806: return mmc[2] >> 20;
     case 0x4807: return mmc[3] >> 20;
   }
 
-  return cpu.regs.mdr;
+  //$4802-$4803 and $4808-$480F fall through to ROM
+  return memory::cartrom.read(addr);
 }
 
 void SDD1::mmio_write(unsigned addr, uint8 data) {
-  addr &= 0xffff;
-
   if((addr & 0x4380) == 0x4300) {
     unsigned channel = (addr >> 4) & 7;
     switch(addr & 15) {
@@ -103,7 +103,7 @@ void SDD1::mmio_write(unsigned addr, uint8 data) {
 //the actual S-DD1 transfer can occur on any channel, but it is most likely limited to
 //one transfer per $420b write (for spooling purposes). however, this is not known for certain.
 uint8 SDD1::read(unsigned addr) {
-  if(sdd1_enable & xfer_enable) {
+  if((sdd1_enable & xfer_enable) && !debugger_access()) {
     //at least one channel has S-DD1 decompression enabled ...
     for(unsigned i = 0; i < 8; i++) {
       if(sdd1_enable & xfer_enable & (1 << i)) {
@@ -118,7 +118,7 @@ uint8 SDD1::read(unsigned addr) {
             //sdd1emu calls this function; it needs to access uncompressed data;
             //so temporarily disable decompression mode for decompress() call.
             uint8 temp = sdd1_enable;
-            sdd1_enable = false;
+            sdd1_enable = 0;
             sdd1emu.decompress(addr, buffer.size, buffer.data);
             sdd1_enable = temp;
 
@@ -143,6 +143,7 @@ uint8 SDD1::read(unsigned addr) {
 }
 
 void SDD1::write(unsigned addr, uint8 data) {
+  memory::cartrom.write(mmc[(addr >> 20) & 3] + (addr & 0x0fffff), data);
 }
 
 SDD1::SDD1() {

@@ -22,7 +22,7 @@ public:
   QVBoxLayout *layout;
   QMenu *system;
     QAction *system_load;
-	QAction *system_reload;
+    QAction *system_reload;
     QMenu *system_loadSpecial;
       QAction *system_loadSpecial_bsxSlotted;
       QAction *system_loadSpecial_bsx;
@@ -81,12 +81,14 @@ public:
       QAction *tools_movies_recordFromPowerOn;
       QAction *tools_movies_recordFromHere;
     QAction *tools_captureScreenshot;
+    QAction *tools_captureSPC;
     QMenu *tools_loadState;
     QMenu *tools_saveState;
     QAction *tools_cheatEditor;
     QAction *tools_cheatFinder;
     QAction *tools_stateManager;
     QAction *tools_effectToggle;
+	QAction *tools_soundViewer;
     QAction *tools_debugger;
   QMenu *help;
     QAction *help_documentation;
@@ -155,12 +157,14 @@ public slots:
   void recordMovieFromPowerOn();
   void recordMovieFromHere();
   void saveScreenshot();
+  void saveSPC();
   void loadState();
   void saveState();
   void showCheatEditor();
   void showCheatFinder();
   void showStateManager();
   void showEffectToggle();
+  void showSoundViewer();
   void showDebugger();
   void showDocumentation();
   void showLicense();

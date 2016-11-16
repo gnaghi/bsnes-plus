@@ -11,6 +11,10 @@ alwaysinline void SMP::ram_write(uint16 addr, uint8 data) {
   if(status.ram_writable && !status.ram_disabled) memory::apuram[addr] = data;
 }
 
+uint8 SMP::op_debugread(uint16 addr) {
+  return op_busread(addr);
+}
+
 alwaysinline uint8 SMP::op_busread(uint16 addr) {
   uint8 r;
   if((addr & 0xfff0) == 0x00f0) {  //00f0-00ff
@@ -36,7 +40,8 @@ alwaysinline uint8 SMP::op_busread(uint16 addr) {
       case 0xf5:    //CPUIO1
       case 0xf6:    //CPUIO2
       case 0xf7: {  //CPUIO3
-        synchronize_cpu();
+        if (!Memory::debugger_access())
+          synchronize_cpu();
         r = port.cpu_to_smp[addr & 3];
       } break;
 
@@ -53,17 +58,20 @@ alwaysinline uint8 SMP::op_busread(uint16 addr) {
 
       case 0xfd: {  //T0OUT -- 4-bit counter value
         r = t0.stage3_ticks & 15;
-        t0.stage3_ticks = 0;
+        if (!Memory::debugger_access())
+          t0.stage3_ticks = 0;
       } break;
 
       case 0xfe: {  //T1OUT -- 4-bit counter value
         r = t1.stage3_ticks & 15;
-        t1.stage3_ticks = 0;
+        if (!Memory::debugger_access())
+          t1.stage3_ticks = 0;
       } break;
 
       case 0xff: {  //T2OUT -- 4-bit counter value
         r = t2.stage3_ticks & 15;
-        t2.stage3_ticks = 0;
+        if (!Memory::debugger_access())
+          t2.stage3_ticks = 0;
       } break;
     }
   } else {
@@ -138,6 +146,10 @@ alwaysinline void SMP::op_buswrite(uint16 addr, uint8 data) {
         if(!(status.dsp_addr & 0x80)) {
           dsp.write(status.dsp_addr & 0x7f, data);
         }
+        
+        if (dump_spc && status.dsp_addr == 0x4c /* r_kon */ && data) {
+          save_spc_dump();
+        }
       } break;
 
       case 0xf4:    //CPUIO0
@@ -179,6 +191,12 @@ alwaysinline void SMP::op_buswrite(uint16 addr, uint8 data) {
 void SMP::op_io() {
   add_clocks(24);
   cycle_edge();
+}
+
+uint8 SMP::op_read_dummy(uint16 addr) {
+  // lame hack to always use the non-debugger version of op_read
+  // (for dummy reads in write instructions which shouldn't trigger read breakpoints)
+  return SMP::op_read(addr);
 }
 
 uint8 SMP::op_read(uint16 addr) {

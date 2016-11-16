@@ -7,6 +7,7 @@ void SuperFX::disassemble_opcode(char *output, uint32 addr, bool track_regs) {
   
   int temp_regs = disassemble_regs;
 
+  SNES::debugger.bus_access = true;
   if(!regs.sfr.alt2) {
     if(!regs.sfr.alt1) {
       disassemble_alt0(t, addr);
@@ -20,7 +21,8 @@ void SuperFX::disassemble_opcode(char *output, uint32 addr, bool track_regs) {
       disassemble_alt3(t, addr);
     }
   }
-
+  SNES::debugger.bus_access = false;
+  
   sprintf(output, "%.6x %s", addr, t);
 
   unsigned length = strlen(output);
@@ -65,9 +67,9 @@ void SuperFX::disassemble_opcode(char *output, uint32 addr, bool track_regs) {
   case id+ 0: case id+ 1: case id+ 2: case id+ 3: case id+ 4: case id+ 5: case id+ 6: case id+ 7: \
   case id+ 8: case id+ 9: case id+10: case id+11: case id+12: case id+13: case id+14: case id+15
 
-#define op0 sfxdebugbus.read(addr + 0)
-#define op1 sfxdebugbus.read(addr + 1)
-#define op2 sfxdebugbus.read(addr + 2)
+#define op0 superfxbus.read(addr + 0)
+#define op1 superfxbus.read(addr + 1)
+#define op2 superfxbus.read(addr + 2)
 #define bdest (addr + (int8_t)op1 + 1) & 0xffff
 
 #define R(n) disassemble_regs |= (1 << n)
@@ -85,8 +87,8 @@ void SuperFX::disassemble_alt0(char *output, uint32 addr) {
     case  (0x03): sprintf(t, "lsr   "); Rsd; break;
     case  (0x04): sprintf(t, "rol   "); Rsd; break;
     case  (0x05): sprintf(t, "bra   $%.4x", bdest); break;
-    case  (0x06): sprintf(t, "blt   $%.4x", bdest); break;
-    case  (0x07): sprintf(t, "bge   $%.4x", bdest); break;
+    case  (0x06): sprintf(t, "bge   $%.4x", bdest); break;
+    case  (0x07): sprintf(t, "blt   $%.4x", bdest); break;
     case  (0x08): sprintf(t, "bne   $%.4x", bdest); break;
     case  (0x09): sprintf(t, "beq   $%.4x", bdest); break;
     case  (0x0a): sprintf(t, "bpl   $%.4x", bdest); break;
@@ -142,8 +144,8 @@ void SuperFX::disassemble_alt1(char *output, uint32 addr) {
     case  (0x03): sprintf(t, "lsr   "); Rsd; break;
     case  (0x04): sprintf(t, "rol   "); Rsd; break;
     case  (0x05): sprintf(t, "bra   $%.4x", bdest); break;
-    case  (0x06): sprintf(t, "blt   $%.4x", bdest); break;
-    case  (0x07): sprintf(t, "bge   $%.4x", bdest); break;
+    case  (0x06): sprintf(t, "bge   $%.4x", bdest); break;
+    case  (0x07): sprintf(t, "blt   $%.4x", bdest); break;
     case  (0x08): sprintf(t, "bne   $%.4x", bdest); break;
     case  (0x09): sprintf(t, "beq   $%.4x", bdest); break;
     case  (0x0a): sprintf(t, "bpl   $%.4x", bdest); break;
@@ -199,8 +201,8 @@ void SuperFX::disassemble_alt2(char *output, uint32 addr) {
     case  (0x03): sprintf(t, "lsr   "); Rsd; break;
     case  (0x04): sprintf(t, "rol   "); Rsd; break;
     case  (0x05): sprintf(t, "bra   $%.4x", bdest); break;
-    case  (0x06): sprintf(t, "blt   $%.4x", bdest); break;
-    case  (0x07): sprintf(t, "bge   $%.4x", bdest); break;
+    case  (0x06): sprintf(t, "bge   $%.4x", bdest); break;
+    case  (0x07): sprintf(t, "blt   $%.4x", bdest); break;
     case  (0x08): sprintf(t, "bne   $%.4x", bdest); break;
     case  (0x09): sprintf(t, "beq   $%.4x", bdest); break;
     case  (0x0a): sprintf(t, "bpl   $%.4x", bdest); break;
@@ -256,8 +258,8 @@ void SuperFX::disassemble_alt3(char *output, uint32 addr) {
     case  (0x03): sprintf(t, "lsr   "); Rsd; break;
     case  (0x04): sprintf(t, "rol   "); Rsd; break;
     case  (0x05): sprintf(t, "bra   $%.4x", bdest); break;
-    case  (0x06): sprintf(t, "blt   $%.4x", bdest); break;
-    case  (0x07): sprintf(t, "bge   $%.4x", bdest); break;
+    case  (0x06): sprintf(t, "bge   $%.4x", bdest); break;
+    case  (0x07): sprintf(t, "blt   $%.4x", bdest); break;
     case  (0x08): sprintf(t, "bne   $%.4x", bdest); break;
     case  (0x09): sprintf(t, "beq   $%.4x", bdest); break;
     case  (0x0a): sprintf(t, "bpl   $%.4x", bdest); break;

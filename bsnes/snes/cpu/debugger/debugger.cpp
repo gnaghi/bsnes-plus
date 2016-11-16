@@ -5,6 +5,14 @@
  */
 #ifdef CPU_CPP
 
+uint8 CPUDebugger::disassembler_read(uint32 addr)
+{
+  debugger.bus_access = true;
+  uint8 data = bus.read(addr);
+  debugger.bus_access = false;
+  return data;
+}
+
 void CPUDebugger::op_step() {
   bool break_event = false;
 
@@ -12,7 +20,6 @@ void CPUDebugger::op_step() {
   usage[regs.pc] |= UsageOpcode | (regs.p.m << 1) | (regs.p.x << 0);
   opcode_pc = regs.pc;
 
-  opcode_edge = true;
   if(debugger.step_cpu &&
       (debugger.step_type == Debugger::StepType::StepInto ||
        (debugger.step_type >= Debugger::StepType::StepOver && debugger.call_count < 0))) {
@@ -21,6 +28,15 @@ void CPUDebugger::op_step() {
     debugger.step_type = Debugger::StepType::None;
     scheduler.exit(Scheduler::ExitReason::DebuggerEvent);
   } else {
+      
+    if (debugger.break_on_wdm) {
+      uint8 opcode = disassembler_read(opcode_pc);
+      if (opcode == 0x42) {
+        debugger.breakpoint_hit = Debugger::SoftBreakCPU;
+        debugger.break_event = Debugger::BreakEvent::BreakpointHit;
+        scheduler.exit(Scheduler::ExitReason::DebuggerEvent);
+      }
+    }
     debugger.breakpoint_test(Debugger::Breakpoint::Source::CPUBus, Debugger::Breakpoint::Mode::Exec, regs.pc, 0x00);
   }
   if(step_event) step_event();
@@ -34,15 +50,13 @@ void CPUDebugger::op_step() {
       debugger.step_over_new = false;
     }
   
-    uint8 opcode = CPU::op_read(opcode_pc);
+    uint8 opcode = disassembler_read(opcode_pc);
     if (opcode == 0x20 || opcode == 0x22 || opcode == 0xfc) {
       debugger.call_count++;
     } else if (opcode == 0x60 || opcode == 0x6b) {
       debugger.call_count--;
     }
   }
-  
-  opcode_edge = false;
 
   CPU::op_step();
   synchronize_smp();
@@ -75,9 +89,9 @@ uint8 CPUDebugger::dma_read(uint32 abus) {
   int offset = cartridge.rom_offset(abus);
   if (offset >= 0) cart_usage[offset] |= UsageRead;
   
-  uint8 data = bus.read(abus);
+  uint8 data = CPU::dma_read(abus);
   debugger.breakpoint_test(Debugger::Breakpoint::Source::CPUBus, Debugger::Breakpoint::Mode::Read, abus, data);
-  return CPU::dma_read(abus);
+  return data;
 }
 
 void CPUDebugger::op_write(uint32 addr, uint8 data) {
@@ -101,7 +115,7 @@ uint8 CPUDebugger::mmio_read(unsigned addr) {
   return CPU::mmio_read(addr);
 }
 
-void CPU::mmio_write(unsigned addr, uint8 data) {
+void CPUDebugger::mmio_write(unsigned addr, uint8 data) {
   if (addr & 0xffff == 0x2180) {
     uint32 fulladdr = 0x7e0000 | status.wram_addr;
   
@@ -134,7 +148,6 @@ CPUDebugger::CPUDebugger() {
   usage = new uint8[1 << 24]();
   cart_usage = new uint8[1 << 24]();
   opcode_pc = 0x8000;
-  opcode_edge = false;
 }
 
 CPUDebugger::~CPUDebugger() {
@@ -168,11 +181,7 @@ bool CPUDebugger::property(unsigned id, string &name, string &value) {
   item("NMI Enable", status.nmi_enabled);
   item("H-IRQ Enable", status.hirq_enabled);
   item("V-IRQ Enable", status.virq_enabled);
-#if defined(ALT_CPU_CPP)
-  item("Auto Joypad Poll", status.auto_joypad_poll_enabled);
-#else
   item("Auto Joypad Poll", status.auto_joypad_poll);
-#endif
 
   //$4201
   item("$4201", "");
@@ -196,19 +205,11 @@ bool CPUDebugger::property(unsigned id, string &name, string &value) {
 
   //$4207-$4208
   item("$4207-$4208", "");
-#if defined(ALT_CPU_CPP)
-  item("H-Time", string("0x", hex<4>(status.htime)));
-#else
   item("H-Time", string("0x", hex<4>(status.hirq_pos)));
-#endif
 
   //$4209-$420a
   item("$4209-$420a", "");
-#if defined(ALT_CPU_CPP)
-  item("V-Time", string("0x", hex<4>(status.vtime)));
-#else
   item("V-Time", string("0x", hex<4>(status.virq_pos)));
-#endif
 
   //$420b
   unsigned dma_enable = 0;
@@ -228,18 +229,57 @@ bool CPUDebugger::property(unsigned id, string &name, string &value) {
   item("$420d", "");
   item("FastROM Enable", status.rom_speed == 6);
 
+  //$4210
+  item("$4210", "");
+  item("NMI Flag", status.nmi_line);
+#if defined(ALT_CPU_CPP)
+  item("S-CPU Version", 2u);
+#else
+  item("S-CPU Version", (unsigned)cpu_version);
+#endif
+
+  //$4211
+  item("$4211", "");
+  item("IRQ Flag", status.irq_line);
+  
+  //$4212
+  {
+#if defined(ALT_CPU_CPP)
+  uint8 r = mmio_read(0x4212);
+#else
+  uint8 r = mmio_r4212();
+#endif
+  item("$4212", "");
+  item("V-Blank Flag", (r & 0x80) != 0);
+  item("H-Blank Flag", (r & 0x40) != 0);
+  item("Auto Joypad Read", (r & 0x01) != 0);
+  }
+  
+  //$4214-$4215
+  item("$4214-$4215", "");
+  item("Quotient", (unsigned)status.rddiv);
+  
+  item("$4216-$4217", "");
+  item("Product / Remainder", (unsigned)status.rdmpy);
+  
+  item("$4218-$421f", "");
+  item("Controller 1 Data", string("0x", hex<4>((status.joy1h << 8) | status.joy1l)));
+  item("Controller 2 Data", string("0x", hex<4>((status.joy2h << 8) | status.joy2l)));
+  item("Controller 3 Data", string("0x", hex<4>((status.joy3h << 8) | status.joy3l)));
+  item("Controller 4 Data", string("0x", hex<4>((status.joy4h << 8) | status.joy4l)));
+  
   for(unsigned i = 0; i < 8; i++) {
     item(string("DMA Channel ", i), "");
 
     //$43x0
-    item("Direction", channel[i].direction);
+    item("Direction", channel[i].direction ? "B->A" : "A->B");
     item("Indirect", channel[i].indirect);
     item("Reverse Transfer", channel[i].reverse_transfer);
     item("Fixed Transfer", channel[i].fixed_transfer);
     item("Transfer Mode", (unsigned)channel[i].transfer_mode);
 
     //$43x1
-    item("B-Bus Address", string("0x", hex<4>(channel[i].dest_addr)));
+    item("B-Bus Address", string("0x21", hex<2>(channel[i].dest_addr)));
 
     //$43x2-$43x3
     item("A-Bus Address", string("0x", hex<4>(channel[i].source_addr)));
@@ -262,6 +302,64 @@ bool CPUDebugger::property(unsigned id, string &name, string &value) {
 
   #undef item
   return false;
+}
+
+unsigned CPUDebugger::getRegister(unsigned id) {
+  switch ((Register)id) {
+  case RegisterPC: return regs.pc;
+  case RegisterA:  return regs.a;
+  case RegisterX:  return regs.x;
+  case RegisterY:  return regs.y;
+  case RegisterS:  return regs.s;
+  case RegisterD:  return regs.d;
+  case RegisterDB: return regs.db;
+  case RegisterP:  return regs.p;
+  }
+  
+  return 0;
+}
+
+void CPUDebugger::setRegister(unsigned id, unsigned value) {
+  switch (id) {
+  case RegisterPC: regs.pc = value; return;
+  case RegisterA:  regs.a  = value; return;
+  case RegisterX:  regs.x  = value; return;
+  case RegisterY:  regs.y  = value; return;
+  case RegisterS:  regs.s  = value; return;
+  case RegisterD:  regs.d  = value; return;
+  case RegisterDB: regs.db = value; return;
+  case RegisterP:  regs.p  = value; return;
+  }
+}
+
+bool CPUDebugger::getFlag(unsigned id) {
+  switch (id) {
+  case FlagE: return regs.e;
+  case FlagN: return regs.p.n;
+  case FlagV: return regs.p.v;
+  case FlagM: return regs.p.m;
+  case FlagX: return regs.p.x;
+  case FlagD: return regs.p.d;
+  case FlagI: return regs.p.i;
+  case FlagZ: return regs.p.z;
+  case FlagC: return regs.p.c;
+  }
+  
+  return false;
+}
+
+void CPUDebugger::setFlag(unsigned id, bool value) {
+  switch (id) {
+  case FlagE: regs.e   = value; return;
+  case FlagN: regs.p.n = value; return;
+  case FlagV: regs.p.v = value; return;
+  case FlagM: regs.p.m = value; return;
+  case FlagX: regs.p.x = value; return;
+  case FlagD: regs.p.d = value; return;
+  case FlagI: regs.p.i = value; return;
+  case FlagZ: regs.p.z = value; return;
+  case FlagC: regs.p.c = value; return;
+  }
 }
 
 #endif

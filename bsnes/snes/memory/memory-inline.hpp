@@ -2,6 +2,14 @@
 
 unsigned Memory::size() const { return 0; }
 
+bool Memory::debugger_access() {
+#if defined(DEBUGGER)
+  return debugger.bus_access;
+#else
+  return false;
+#endif
+}
+
 //StaticRAM
 
 uint8* StaticRAM::data() { return data_; }
@@ -22,14 +30,14 @@ void MappedRAM::reset() {
     delete[] data_;
     data_ = 0;
   }
-  size_ = -1U;
+  size_ = 0;
   write_protect_ = false;
 }
 
 void MappedRAM::map(uint8 *source, unsigned length) {
   reset();
   data_ = source;
-  size_ = data_ && length > 0 ? length : -1U;
+  size_ = data_ && length > 0 ? length : 0;
 }
 
 void MappedRAM::copy(const uint8 *data, unsigned size) {
@@ -44,10 +52,10 @@ void MappedRAM::write_protect(bool status) { write_protect_ = status; }
 uint8* MappedRAM::data() { return data_; }
 unsigned MappedRAM::size() const { return size_; }
 
-uint8 MappedRAM::read(unsigned addr) { return (data_ && size_ != -1U && addr < size_) ? data_[addr] : 0; }
-void MappedRAM::write(unsigned addr, uint8 n) { if(data_ && size_ != -1U && addr < size_ && !write_protect_) data_[addr] = n; }
+uint8 MappedRAM::read(unsigned addr) { return data_[addr]; }
+void MappedRAM::write(unsigned addr, uint8 n) { if(!write_protect_ || debugger_access()) data_[addr] = n; }
 const uint8& MappedRAM::operator[](unsigned addr) const { return data_[addr]; }
-MappedRAM::MappedRAM() : data_(0), size_(-1U), write_protect_(false) {}
+MappedRAM::MappedRAM() : data_(0), size_(0), write_protect_(false) {}
 
 //Bus
 
@@ -72,7 +80,6 @@ bool Bus::is_mirror(uint24 addr1, uint24 addr2) {
   // since pages are always aligned to 256-byte boundaries
   if((addr1 ^ addr2) & 0xff) return false;
 
-  // TODO: handle this correctly for MMIO as well (at least on the SNES side)
   Page &p1 = page[addr1 >> 8];
   Page &p2 = page[addr2 >> 8];
   return (p1.access == p2.access) && (p1.offset + addr1 == p2.offset + addr2);

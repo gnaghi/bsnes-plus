@@ -1,6 +1,9 @@
 class PPU : public Processor, public PPUcounter, public MMIO {
 public:
   enum : bool { Threaded = true };
+  enum : bool { SupportsLayerEnable = true };
+  enum : bool { SupportsFrameSkip = true };
+
   alwaysinline void step(unsigned clocks);
   alwaysinline void synchronize_cpu();
 
@@ -59,6 +62,7 @@ private:
   friend class PPU::Sprite;
   friend class PPU::Screen;
   friend class Video;
+  friend class PPUDebugger;
 };
 
 #if defined(DEBUGGER)

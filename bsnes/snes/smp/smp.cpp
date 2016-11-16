@@ -73,7 +73,7 @@ void SMP::reset() {
   regs.p = 0x02;
 
   for(unsigned i = 0; i < memory::apuram.size(); i++) {
-    memory::apuram.write(i, 0x00);
+    memory::apuram.write(i, random(0));
   }
 
   status.clock_counter = 0;
@@ -131,9 +131,76 @@ void SMP::reset() {
 }
 
 SMP::SMP() {
+  // put this in the ctor instead of reset so that something will still get dumped on reset if it hasn't been (?)
+  dump_spc = false;
 }
 
 SMP::~SMP() {
+}
+
+void SMP::save_spc_dump(string path) {
+  dump_spc = true;
+  spc_path = path;
+}
+
+void SMP::save_spc_dump() {
+  dump_spc = false;
+	
+  file out;
+  if (!out.open(spc_path(), file::mode::write)) {
+    return;
+  }
+  
+  out.write((const uint8_t*)"SNES-SPC700 Sound File Data v0.30\x1a\x1a\x1a\x1e", 0x25);
+  out.writel(regs.pc, 2);
+  out.write(regs.a);
+  out.write(regs.x);
+  out.write(regs.y);
+  out.write(regs.p);
+  out.write(regs.sp);
+  out.write(0);
+  out.write(0);
+  
+  // just write completely blank ID666 tag
+  for (unsigned i = 0x2e; i < 0x100; i++) out.write(0);
+  
+  // 0000 - 00EF
+  out.write(memory::apuram.data(), 0xF0);
+  
+  // 00F0 - 00FF
+  out.write(memory::apuram[0xF0]);
+  out.write(memory::apuram[0xF1]);
+  out.write(status.dsp_addr);
+  out.write(dsp.read(status.dsp_addr & 0x7f));
+  
+  out.write(port.cpu_to_smp[0]);
+  out.write(port.cpu_to_smp[1]);
+  out.write(port.cpu_to_smp[2]);
+  out.write(port.cpu_to_smp[3]);
+  
+  out.write(port.aux[0]);
+  out.write(port.aux[1]);
+  
+  out.write(memory::apuram[0xFA]);
+  out.write(memory::apuram[0xFB]);
+  out.write(memory::apuram[0xFC]);
+  
+  out.write(t0.stage3_ticks & 15);
+  out.write(t1.stage3_ticks & 15);
+  out.write(t2.stage3_ticks & 15);
+  
+  // 0100 - FFFF
+  out.write(memory::apuram.data() + 0x100, 0xFF00);
+  
+  for (unsigned i = 0; i < 128; i++) {
+    out.write(dsp.read(i));
+  }
+  
+  for (unsigned i = 0; i < 128; i++) {
+    out.write(0);
+  }
+  
+  out.close();
 }
 
 }

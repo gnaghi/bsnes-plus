@@ -7,6 +7,7 @@ Configuration::Configuration() {
   controller_port2 = Input::Device::Joypad;
   expansion_port   = System::ExpansionPortDevice::BSX;
   region           = System::Region::Autodetect;
+  random           = true;
 
   cpu.version         = 2;
   cpu.ntsc_frequency  = 21477272;  //315 / 88 * 6000000
@@ -18,8 +19,6 @@ Configuration::Configuration() {
 
   ppu1.version = 1;
   ppu2.version = 3;
-
-  superfx.speed = 0;  //0 = auto-select, 1 = force 10.74MHz, 2 = force 21.48MHz
 }
 
 #endif

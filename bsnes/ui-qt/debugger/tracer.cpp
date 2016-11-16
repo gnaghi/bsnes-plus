@@ -6,7 +6,7 @@ void Tracer::stepCpu() {
     unsigned addr = SNES::cpu.regs.pc;
     if(!traceMask || !(traceMaskCPU[addr >> 3] & (0x80 >> (addr & 7)))) {
       char text[256];
-      SNES::cpu.disassemble_opcode(text, addr);
+      SNES::cpu.disassemble_opcode(text, addr, config().debugger.showHClocks);
       tracefile.print(string() << text << "\n");
     }
     traceMaskCPU[addr >> 3] |= 0x80 >> (addr & 7);
@@ -30,7 +30,7 @@ void Tracer::stepSa1() {
     unsigned addr = SNES::sa1.regs.pc;
     if(!traceMask || !(traceMaskSA1[addr >> 3] & (0x80 >> (addr & 7)))) {
       char text[256];
-      SNES::sa1.disassemble_opcode(text, addr);
+      SNES::sa1.disassemble_opcode(text, addr, config().debugger.showHClocks);
       tracefile.print(string() << text << "\n");
     }
     traceMaskSA1[addr >> 3] |= 0x80 >> (addr & 7);
@@ -49,44 +49,42 @@ void Tracer::stepSfx() {
   }
 }
 
-void Tracer::setCpuTraceState(int state) {
-  traceCpu = (state == Qt::Checked);
+void Tracer::resetTraceState() {
+  tracefile.close();
+  setTraceState(traceCpu || traceSmp || traceSa1 || traceSfx);
+  
+  // reset trace masks
+  setTraceMaskState(Qt::Checked);
+}
 
-  if(traceCpu && !tracefile.open()) {
-    tracefile.open(string() << config().path.data << "trace.log", file::mode::write);
+void Tracer::setTraceState(bool state) {
+  if(state && !tracefile.open() && SNES::cartridge.loaded()) {
+    string name = filepath(nall::basename(cartridge.fileName), config().path.data);
+    name << "-trace.log";
+    tracefile.open(name, file::mode::write);
   } else if(!traceCpu && !traceSmp && !traceSa1 && !traceSfx && tracefile.open()) {
     tracefile.close();
   }
+}
+
+void Tracer::setCpuTraceState(int state) {
+  traceCpu = (state == Qt::Checked);
+  setTraceState(traceCpu);
 }
 
 void Tracer::setSmpTraceState(int state) {
   traceSmp = (state == Qt::Checked);
-
-  if(traceSmp && !tracefile.open()) {
-    tracefile.open(string() << config().path.data << "trace.log", file::mode::write);
-  } else if(!traceCpu && !traceSmp && !traceSa1 && !traceSfx && tracefile.open()) {
-    tracefile.close();
-  }
+  setTraceState(traceSmp);
 }
 
 void Tracer::setSa1TraceState(int state) {
   traceSa1 = (state == Qt::Checked);
-
-  if(traceSa1 && !tracefile.open()) {
-    tracefile.open(string() << config().path.data << "trace.log", file::mode::write);
-  } else if(!traceCpu && !traceSmp && !traceSa1 && !traceSfx && tracefile.open()) {
-    tracefile.close();
-  }
+  setTraceState(traceSa1);
 }
 
 void Tracer::setSfxTraceState(int state) {
   traceSfx = (state == Qt::Checked);
-
-  if(traceSfx && !tracefile.open()) {
-    tracefile.open(string() << config().path.data << "trace.log", file::mode::write);
-  } else if(!traceCpu && !traceSmp && !traceSa1 && !traceSfx && tracefile.open()) {
-    tracefile.close();
-  }
+  setTraceState(traceSfx);
 }
 
 void Tracer::setTraceMaskState(int state) {

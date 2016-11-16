@@ -2,6 +2,31 @@ class SMPDebugger : public SMP, public ChipDebugger {
 public:
   bool property(unsigned id, string &name, string &value);
 
+  enum Register {
+    RegisterPC,
+    RegisterA,
+    RegisterX,
+    RegisterY,
+    RegisterS,
+    RegisterYA,
+    RegisterP,
+  };
+  unsigned getRegister(unsigned id);
+  void     setRegister(unsigned id, unsigned value);
+
+  enum {
+    FlagN,
+    FlagV,
+    FlagP,
+    FlagB,
+    FlagH,
+    FlagI,
+    FlagZ,
+    FlagC,
+  };
+  bool     getFlag(unsigned id);
+  void     setFlag(unsigned id, bool value);
+
   function<void ()> step_event;
 
   enum Usage {
@@ -12,7 +37,6 @@ public:
   };
   uint8 *usage;
   uint16 opcode_pc;
-  bool opcode_edge;
 
   void op_step();
   uint8_t op_readpc();

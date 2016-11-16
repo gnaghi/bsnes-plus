@@ -7,3 +7,7 @@
 *.rcc
 *.so
 *.so.1
+*.patch
+*.rar
+*/out
+*/bin

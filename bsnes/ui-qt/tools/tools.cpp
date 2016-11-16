@@ -8,6 +8,8 @@ ToolsWindow *toolsWindow;
 #include "statemanager.cpp"
 #include "effecttoggle.cpp"
 
+#include "soundviewer.cpp"
+
 ToolsWindow::ToolsWindow() {
   setObjectName("tools-window");
   setWindowTitle("Tools");
@@ -24,7 +26,8 @@ ToolsWindow::ToolsWindow() {
   cheatFinderWindow = new CheatFinderWindow;
   stateManagerWindow = new StateManagerWindow;
   effectToggleWindow = new EffectToggleWindow;
-
+  soundViewerWindow = new SoundViewerWindow;
+  
   cheatEditorArea = new QScrollArea;
   cheatEditorArea->setWidget(cheatEditorWindow);
   cheatEditorArea->setFrameStyle(0);
@@ -44,13 +47,13 @@ ToolsWindow::ToolsWindow() {
   effectToggleArea->setWidget(effectToggleWindow);
   effectToggleArea->setFrameStyle(0);
   effectToggleArea->setWidgetResizable(true);
-
+  
   tab = new QTabWidget;
   tab->addTab(cheatEditorArea, "Cheat Editor");
   tab->addTab(cheatFinderArea, "Cheat Finder");
   tab->addTab(stateManagerArea, "State Manager");
-  #if defined(PROFILE_COMPATIBILITY) || defined(PROFILE_PERFORMANCE)
-  tab->addTab(effectToggleArea, "Effect Toggle");
-  #endif
+  if(SNES::PPU::SupportsLayerEnable || SNES::DSP::SupportsChannelEnable)
+    tab->addTab(effectToggleArea, "Effect Toggle");
+
   layout->addWidget(tab);
 }

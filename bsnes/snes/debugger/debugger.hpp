@@ -9,7 +9,9 @@ public:
     SFXStep,
   } break_event;
 
-  enum { Breakpoints = 8 };
+  enum { Breakpoints = 8,
+         SoftBreakCPU = Breakpoints,
+         SoftBreakSA1, };
   struct Breakpoint {
     bool enabled;
     unsigned addr;
@@ -29,6 +31,8 @@ public:
   bool step_smp;
   bool step_sa1;
   bool step_sfx;
+  bool bus_access;
+  bool break_on_wdm;
 
   enum class StepType : unsigned { 
     None, StepInto, StepOver, StepOut 

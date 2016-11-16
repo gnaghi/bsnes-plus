@@ -54,6 +54,19 @@ void Cartridge::parse_xml_cartridge(const char *data) {
 }
 
 void Cartridge::parse_xml_bsx(const char *data) {
+  xml_element document = xml_parse(data);
+  if(document.element.size() == 0) return;
+
+  foreach(head, document.element) {
+    if(head.name == "cartridge") {
+      foreach(attr, head.attribute) {
+        if(attr.name == "type") {
+          if(attr.content == "FlashROM") bsxpack_type = BSXPackType::FlashROM;
+          if(attr.content == "MaskROM") bsxpack_type = BSXPackType::MaskROM;
+        }
+      }
+    }
+  }
 }
 
 void Cartridge::parse_xml_sufami_turbo(const char *data, bool slot) {
@@ -270,12 +283,13 @@ void Cartridge::xml_parse_necdsp(xml_element &root) {
 }
 
 void Cartridge::xml_parse_bsx(xml_element &root) {
+  has_bsx_slot = true;
   if(mode != Mode::BsxSlotted && mode != Mode::Bsx) return;
 
   foreach(node, root.element) {
     if(node.name == "slot") {
-      xml_parse_memory(node, memory::bsxflash);
-    } else if(node.name == "mmio") {
+      xml_parse_memory(node, bsxpack_access());
+    } else if(node.name == "mcc") {
       foreach(leaf, node.element) {
         if(leaf.name == "map") {
           Mapping m(bsxcart);
@@ -303,7 +317,7 @@ void Cartridge::xml_parse_sufamiturbo(xml_element &root) {
       }
 
       Memory &rom = (slotid == 0) ? memory::stArom : memory::stBrom;
-      if(rom.size() == -1U) continue;
+      if(rom.size() == 0) continue;
       Memory &ram = (slotid == 0) ? memory::stAram : memory::stBram;
       unsigned ram_size = (slotid == 0) ? st_A_ram_size : st_B_ram_size;
 

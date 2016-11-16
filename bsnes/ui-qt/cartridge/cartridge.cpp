@@ -1,4 +1,5 @@
 #include "../ui-base.hpp"
+#include <nall/bps/patch.hpp>
 Cartridge cartridge;
 
 //================
@@ -122,7 +123,7 @@ bool Cartridge::loadNormal(const char *base) {
 bool Cartridge::loadBsxSlotted(const char *base, const char *slot) {
   unload();
   if(loadCartridge(baseName = base, cartridge.baseXml, SNES::memory::cartrom) == false) return false;
-  loadCartridge(slotAName = slot, cartridge.slotAXml, SNES::memory::bsxflash);
+  loadCartridge(slotAName = slot, cartridge.slotAXml, SNES::memory::bsxpack);
   SNES::cartridge.basename = nall::basename(baseName);
 
   SNES::cartridge.load(SNES::Cartridge::Mode::BsxSlotted,
@@ -142,13 +143,13 @@ bool Cartridge::loadBsxSlotted(const char *base, const char *slot) {
 bool Cartridge::loadBsx(const char *base, const char *slot) {
   unload();
   if(loadCartridge(baseName = base, cartridge.baseXml, SNES::memory::cartrom) == false) return false;
-  loadCartridge(slotAName = slot, cartridge.slotAXml, SNES::memory::bsxflash);
+  loadCartridge(slotAName = slot, cartridge.slotAXml, SNES::memory::bsxpack);
   SNES::cartridge.basename = nall::basename(baseName);
 
   SNES::cartridge.load(SNES::Cartridge::Mode::Bsx,
     lstring() << cartridge.baseXml << cartridge.slotAXml);
 
-  loadMemory(baseName, ".srm", SNES::memory::bsxram );
+  loadMemory(baseName, ".srm", SNES::memory::cartram);
   loadMemory(baseName, ".psr", SNES::memory::bsxpram);
 
   fileName = slotAName;
@@ -215,7 +216,7 @@ void Cartridge::saveMemory() {
     } break;
 
     case SNES::Cartridge::Mode::Bsx: {
-      saveMemory(baseName, ".srm", SNES::memory::bsxram );
+      saveMemory(baseName, ".srm", SNES::memory::cartram);
       saveMemory(baseName, ".psr", SNES::memory::bsxpram);
     } break;
 
@@ -254,6 +255,109 @@ void Cartridge::saveCheats() {
 //private functions
 //=================
 
+bool Cartridge::applyBPS(string &filename, uint8_t *&data, unsigned &size) {
+  if(file::exists(filename) == false)
+    return false;
+
+  bpspatch bps;
+  bps.modify(filename);
+
+  unsigned targetSize = bps.size();
+  uint8_t *targetData = new uint8_t[targetSize];
+
+  bps.source(data, size);
+  bps.target(targetData, targetSize);
+
+  if(bps.apply() == bpspatch::result::success) {
+    delete[] data;
+    data = targetData;
+    size = targetSize;
+    return true;
+  } else {
+    delete[] targetData;
+  }
+
+  return false;
+}
+
+bool Cartridge::applyUPS(string &filename, uint8_t *&data, unsigned &size) {
+  filemap fp;
+  if(fp.open(filename, filemap::mode::read)) {
+    uint8_t *outdata = 0;
+    unsigned outsize = 0;
+    const uint8_t *patchdata = fp.data();
+    unsigned patchsize = fp.size();
+    ups patcher;
+    if(patcher.apply(patchdata, patchsize, data, size, 0, outsize) == ups::result::target_too_small) {
+      outdata = new uint8_t[outsize];
+      if(patcher.apply(patchdata, patchsize, data, size, outdata, outsize) == ups::result::success) {
+        delete[] data;
+        data = outdata;
+        size = outsize;
+        return true;
+      } else {
+        delete[] outdata;
+      }
+    }
+  }
+
+  return false;
+}
+
+bool Cartridge::applyIPS(string &filename, uint8_t *&data, unsigned &size) {
+  file fp;
+  if(fp.open(filename, file::mode::read) == false) return false;
+
+  unsigned psize = fp.size();
+  uint8_t *pdata = new uint8_t[psize];
+  fp.read(pdata, psize);
+  fp.close();
+
+  if(psize < 8 || pdata[0] != 'P' || pdata[1] != 'A' || pdata[2] != 'T' || pdata[3] != 'C' || pdata[4] != 'H') { delete[] pdata; return false; }
+
+  unsigned outsize = 0;
+  uint8_t *outdata = new uint8_t[16 * 1024 * 1024];
+  memset(outdata, 0, 16 * 1024 * 1024);
+  memcpy(outdata, data, size);
+
+  unsigned offset = 5;
+  while(offset < psize - 3) {
+    unsigned addr;
+    addr  = pdata[offset++] << 16;
+    addr |= pdata[offset++] <<  8;
+    addr |= pdata[offset++] <<  0;
+
+    unsigned size;
+    size  = pdata[offset++] << 8;
+    size |= pdata[offset++] << 0;
+
+    if(size == 0) {
+      //RLE
+      size  = pdata[offset++] << 8;
+      size |= pdata[offset++] << 0;
+
+      for(unsigned n = addr; n < addr + size;) {
+        outdata[n++] = pdata[offset];
+        if(n > outsize) outsize = n;
+      }
+      offset++;
+    } else {
+      //uncompressed
+      for(unsigned n = addr; n < addr + size;) {
+        outdata[n++] = pdata[offset++];
+        if(n > outsize) outsize = n;
+      }
+    }
+  }
+
+  delete[] pdata;
+  delete[] data;
+  data = outdata;
+  size = max(size, outsize);
+  
+  return true;
+}
+
 bool Cartridge::loadCartridge(string &filename, string &xml, SNES::MappedRAM &memory) {
   if(file::exists(filename) == false) return false;
 
@@ -262,35 +366,27 @@ bool Cartridge::loadCartridge(string &filename, string &xml, SNES::MappedRAM &me
   audio.clear();
   if(reader.load(filename, data, size) == false) return false;
 
-  patchApplied = false;
-  string name(filepath(nall::basename(filename), config().path.patch), ".ups");
+  patchApplied = "";
 
-  file fp;
-  if(config().file.applyPatches && fp.open(name, file::mode::read)) {
-    unsigned patchsize = fp.size();
-    uint8_t *patchdata = new uint8_t[patchsize];
-    fp.read(patchdata, patchsize);
-    fp.close();
+  string bpsName(filepath(nall::basename(filename), config().path.patch), ".bps");
+  string upsName(filepath(nall::basename(filename), config().path.patch), ".ups");
+  string ipsName(filepath(nall::basename(filename), config().path.patch), ".ips");
 
-    uint8_t *outdata = 0;
-    unsigned outsize = 0;
-    ups patcher;
-    if(patcher.apply(patchdata, patchsize, data, size, 0, outsize) == ups::result::target_too_small) {
-      outdata = new uint8_t[outsize];
-      if(patcher.apply(patchdata, patchsize, data, size, outdata, outsize) == ups::result::success) {
-        delete[] data;
-        data = outdata;
-        size = outsize;
-        patchApplied = true;
-      } else {
-        delete[] outdata;
-      }
+  if(config().file.applyPatches) {
+    if(applyBPS(bpsName, data, size)) {
+      patchApplied = "BPS";
+    } else if(applyUPS(upsName, data, size)) {
+      patchApplied = "UPS";
+    } else if(applyIPS(ipsName, data, size)) {
+      patchApplied = "IPS";
     }
-    delete[] patchdata;
   }
 
+  //remove copier header, if it exists
+  if((size & 0x7fff) == 512) memmove(data, data + 512, size -= 512);
+  
   name = string(nall::basename(filename), ".xml");
-  if(patchApplied == false && file::exists(name)) {
+  if(patchApplied == "" && file::exists(name)) {
     //prefer manually created XML cartridge mapping
     xml.readfile(name);
   } else {
@@ -304,7 +400,7 @@ bool Cartridge::loadCartridge(string &filename, string &xml, SNES::MappedRAM &me
 }
 
 bool Cartridge::loadMemory(const char *filename, const char *extension, SNES::MappedRAM &memory) {
-  if(memory.size() == 0 || memory.size() == -1U) return false;
+  if(memory.size() == 0) return false;
 
   string name;
   name << filepath(nall::basename(filename), config().path.save);
@@ -324,7 +420,7 @@ bool Cartridge::loadMemory(const char *filename, const char *extension, SNES::Ma
 }
 
 bool Cartridge::saveMemory(const char *filename, const char *extension, SNES::MappedRAM &memory) {
-  if(memory.size() == 0 || memory.size() == -1U) return false;
+  if(memory.size() == 0) return false;
 
   string name;
   name << filepath(nall::basename(filename), config().path.save);

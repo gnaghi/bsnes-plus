@@ -2,10 +2,10 @@
 
 //BS-X flash carts, when present, are mapped to 0x400000+
 Memory& SA1::mmio_access(unsigned &addr) {
-  if(!memory::bsxflash.data()) return memory::vsprom;
+  if(!cartridge.has_bsx_slot()) return memory::vsprom;
   if(addr < 0x400000) return memory::vsprom;
   addr &= 0x3fffff;
-  return bsxflash;
+  return cartridge.bsxpack_access();
 }
 
 //(CCNT) SA-1 control
@@ -470,9 +470,11 @@ uint8 SA1::mmio_r2301() {
 //(HCR) hcounter read
 uint8 SA1::mmio_r2302() {
   //latch counters
-  mmio.hcr = status.hcounter >> 2;
-  mmio.vcr = status.vcounter;
-                            return mmio.hcr >> 0; }
+  if(!Memory::debugger_access()) {
+    mmio.hcr = status.hcounter >> 2;
+    mmio.vcr = status.vcounter;
+  }
+                          return mmio.hcr >> 0; }
 uint8 SA1::mmio_r2303() { return mmio.hcr >> 8; }
 
 //(VCR) vcounter read
@@ -505,7 +507,7 @@ uint8 SA1::mmio_r230d() {
               | (vbrbus.read(mmio.va + 2) << 16);
   data >>= mmio.vbit;
 
-  if(mmio.hl == 1) {
+  if(!Memory::debugger_access() && (mmio.hl == 1)) {
     //auto-increment mode
     mmio.vbit += mmio.vb;
     mmio.va += (mmio.vbit >> 3);
@@ -521,9 +523,8 @@ uint8 SA1::mmio_r230e() {
 }
 
 uint8 SA1::mmio_read(unsigned addr) {
-  (co_active() == cpu.thread ? cpu.synchronize_coprocessor() : synchronize_cpu());
-  addr &= 0xffff;
-
+  if(!Memory::debugger_access())
+    (co_active() == cpu.thread ? cpu.synchronize_coprocessor() : synchronize_cpu());
   switch(addr) {
     case 0x2300: return mmio_r2300();
     case 0x2301: return mmio_r2301();
@@ -547,8 +548,6 @@ uint8 SA1::mmio_read(unsigned addr) {
 
 void SA1::mmio_write(unsigned addr, uint8 data) {
   (co_active() == cpu.thread ? cpu.synchronize_coprocessor() : synchronize_cpu());
-  addr &= 0xffff;
-
   switch(addr) {
     case 0x2200: return mmio_w2200(data);
     case 0x2201: return mmio_w2201(data);

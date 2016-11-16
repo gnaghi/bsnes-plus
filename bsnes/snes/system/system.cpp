@@ -13,6 +13,7 @@ System system;
 #include <audio/audio.cpp>
 #include <input/input.cpp>
 
+#include "random.cpp"
 #include "serialization.cpp"
 
 void System::run() {
@@ -96,6 +97,8 @@ void System::term() {
 }
 
 void System::power() {
+  random.seed((unsigned)time(0));
+
   region = config.region;
   expansion = config.expansion_port;
   if(region == Region::Autodetect) {
@@ -106,16 +109,16 @@ void System::power() {
   apu_frequency = region() == Region::NTSC ? config.smp.ntsc_frequency : config.smp.pal_frequency;
 
   bus.power();
-  for(unsigned i = 0x2100; i <= 0x213f; i++) memory::mmio.map(i, ppu);
-  for(unsigned i = 0x2140; i <= 0x217f; i++) memory::mmio.map(i, smp);
-  for(unsigned i = 0x2180; i <= 0x2183; i++) memory::mmio.map(i, cpu);
-  for(unsigned i = 0x4016; i <= 0x4017; i++) memory::mmio.map(i, cpu);
-  for(unsigned i = 0x4200; i <= 0x421f; i++) memory::mmio.map(i, cpu);
-  for(unsigned i = 0x4300; i <= 0x437f; i++) memory::mmio.map(i, cpu);
+  memory::mmio.map(0x2100, 0x213f, ppu);
+  memory::mmio.map(0x2140, 0x217f, smp);
+  memory::mmio.map(0x2180, 0x2183, cpu);
+  memory::mmio.map(0x4016, 0x4017, cpu);
+  memory::mmio.map(0x4200, 0x421f, cpu);
+  memory::mmio.map(0x4300, 0x437f, cpu);
 
   audio.coprocessor_enable(false);
   if(expansion() == ExpansionPortDevice::BSX) bsxbase.enable();
-  if(memory::bsxflash.data()) bsxflash.enable();
+  if(memory::bsxpack.data() && cartridge.bsxpack_type() == Cartridge::BSXPackType::FlashROM) bsxflash.enable();
   if(cartridge.mode() == Cartridge::Mode::Bsx) bsxcart.enable();
   if(cartridge.mode() == Cartridge::Mode::SuperGameBoy) supergameboy.enable();
 
@@ -137,7 +140,7 @@ void System::power() {
   ppu.power();
 
   if(expansion() == ExpansionPortDevice::BSX) bsxbase.power();
-  if(memory::bsxflash.data()) bsxflash.power();
+  if(memory::bsxpack.data() && cartridge.bsxpack_type() == Cartridge::BSXPackType::FlashROM) bsxflash.power();
   if(cartridge.mode() == Cartridge::Mode::Bsx) bsxcart.power();
   if(cartridge.mode() == Cartridge::Mode::SuperGameBoy) supergameboy.power();
 
@@ -174,7 +177,7 @@ void System::reset() {
   ppu.reset();
 
   if(expansion() == ExpansionPortDevice::BSX) bsxbase.reset();
-  if(memory::bsxflash.data()) bsxflash.reset();
+  if(memory::bsxpack.data() && cartridge.bsxpack_type() == Cartridge::BSXPackType::FlashROM) bsxflash.reset();
   if(cartridge.mode() == Cartridge::Mode::Bsx) bsxcart.reset();
   if(cartridge.mode() == Cartridge::Mode::SuperGameBoy) supergameboy.reset();
 

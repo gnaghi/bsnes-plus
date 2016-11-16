@@ -23,12 +23,12 @@
   #include <direct.h>
   #include <shlobj.h>
   #undef interface
-  #define dllexport __declspec(dllexport)
+  #define bsnesexport __declspec(dllexport)
 #else
   #include <unistd.h>
   #include <pwd.h>
   #include <sys/stat.h>
-  #define dllexport
+  #define bsnesexport
 #endif
 
 //==================
@@ -64,16 +64,16 @@
 //inline expansion
 //================
 
-#if defined(__GNUC__)
-  #define noinline      __attribute__((noinline))
+#if defined(__clang__) || defined(__GNUC__)
+  #define neverinline      __attribute__((noinline))
   #define inline        inline
   #define alwaysinline  inline __attribute__((always_inline))
 #elif defined(_MSC_VER)
-  #define noinline      __declspec(noinline)
+  #define neverinline      __declspec(noinline)
   #define inline        inline
   #define alwaysinline  inline __forceinline
 #else
-  #define noinline
+  #define neverinline
   #define inline        inline
   #define alwaysinline  inline
 #endif

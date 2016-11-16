@@ -11,7 +11,7 @@ namespace SNES {
 
 namespace memory {
   MappedRAM cartrom, cartram, cartrtc;
-  MappedRAM bsxflash, bsxram, bsxpram;
+  MappedRAM bsxpack, bsxpram;
   MappedRAM stArom, stAram;
   MappedRAM stBrom, stBram;
   MappedRAM gbrom, gbram, gbrtc;
@@ -36,6 +36,7 @@ void Cartridge::load(Mode cartridge_mode, const lstring &xml_list) {
   spc7110_data_rom_offset = 0x100000;
   st_A_ram_size = 0;
   st_B_ram_size = 0;
+  bsxpack_type = BSXPackType::FlashROM;
   supergameboy_version = SuperGameBoyVersion::Version1;
   supergameboy_ram_size = 0;
   supergameboy_rtc_size = 0;
@@ -66,7 +67,6 @@ void Cartridge::load(Mode cartridge_mode, const lstring &xml_list) {
   }
 
   if(mode == Mode::Bsx) {
-    memory::bsxram.map (allocate<uint8_t>( 32 * 1024, 0xff),  32 * 1024);
     memory::bsxpram.map(allocate<uint8_t>(512 * 1024, 0xff), 512 * 1024);
   }
 
@@ -85,8 +85,7 @@ void Cartridge::load(Mode cartridge_mode, const lstring &xml_list) {
   memory::cartrom.write_protect(true);
   memory::cartram.write_protect(false);
   memory::cartrtc.write_protect(false);
-  memory::bsxflash.write_protect(true);
-  memory::bsxram.write_protect(false);
+  memory::bsxpack.write_protect(true);
   memory::bsxpram.write_protect(false);
   memory::stArom.write_protect(true);
   memory::stAram.write_protect(false);
@@ -96,11 +95,11 @@ void Cartridge::load(Mode cartridge_mode, const lstring &xml_list) {
   memory::gbram.write_protect(false);
   memory::gbrtc.write_protect(false);
 
-  unsigned checksum = ~0;                                           foreach(n, memory::cartrom ) checksum = crc32_adjust(checksum, n);
-  if(memory::bsxflash.size() != 0 && memory::bsxflash.size() != ~0) foreach(n, memory::bsxflash) checksum = crc32_adjust(checksum, n);
-  if(memory::stArom.size()   != 0 && memory::stArom.size()   != ~0) foreach(n, memory::stArom  ) checksum = crc32_adjust(checksum, n);
-  if(memory::stBrom.size()   != 0 && memory::stBrom.size()   != ~0) foreach(n, memory::stBrom  ) checksum = crc32_adjust(checksum, n);
-  if(memory::gbrom.size()    != 0 && memory::gbrom.size()    != ~0) foreach(n, memory::gbrom   ) checksum = crc32_adjust(checksum, n);
+  unsigned checksum = ~0;         foreach(n, memory::cartrom) checksum = crc32_adjust(checksum, n);
+  if(memory::bsxpack.size() != 0) foreach(n, memory::bsxpack) checksum = crc32_adjust(checksum, n);
+  if(memory::stArom.size()  != 0) foreach(n, memory::stArom ) checksum = crc32_adjust(checksum, n);
+  if(memory::stBrom.size()  != 0) foreach(n, memory::stBrom ) checksum = crc32_adjust(checksum, n);
+  if(memory::gbrom.size()   != 0) foreach(n, memory::gbrom  ) checksum = crc32_adjust(checksum, n);
   crc32 = ~checksum;
 
   sha256_ctx sha;
@@ -123,8 +122,7 @@ void Cartridge::unload() {
   memory::cartrom.reset();
   memory::cartram.reset();
   memory::cartrtc.reset();
-  memory::bsxflash.reset();
-  memory::bsxram.reset();
+  memory::bsxpack.reset();
   memory::bsxpram.reset();
   memory::stArom.reset();
   memory::stAram.reset();
@@ -137,6 +135,11 @@ void Cartridge::unload() {
   if(loaded == false) return;
   bus.unload_cart();
   loaded = false;
+}
+
+Memory& Cartridge::bsxpack_access() {
+  if(memory::bsxpack.size() == 0) return memory::memory_unmapped;
+  return (bsxpack_type == BSXPackType::FlashROM) ? (Memory&)bsxflash : (Memory&)memory::bsxpack;
 }
 
 Cartridge::Cartridge() {

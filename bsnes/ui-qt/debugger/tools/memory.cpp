@@ -1,4 +1,10 @@
 #include "memory.moc"
+#include "qhexedit.moc"
+#include "commands.moc"
+
+#include "qhexedit2/qhexedit.cpp"
+#include "qhexedit2/commands.cpp"
+
 MemoryEditor *memoryEditor;
 
 MemoryEditor::MemoryEditor() {
@@ -7,25 +13,22 @@ MemoryEditor::MemoryEditor() {
   setGeometryString(&config().geometry.memoryEditor);
   application.windowList.append(this);
 
-  layout = new QHBoxLayout;
+  layout = new QGridLayout;
   layout->setMargin(Style::WindowMargin);
   layout->setSpacing(Style::WidgetSpacing);
   setLayout(layout);
 
-  editor = new MemHexEditor;
+  editor = new QHexEdit;
   editor->reader = { &MemoryEditor::reader, this };
   editor->writer = { &MemoryEditor::writer, this };
   editor->usage  = { &MemoryEditor::usage, this };
-  editor->setFont(QFont(Style::Monospace));
-  editor->setMinimumWidth((editor->lineWidth() + 3) * editor->fontMetrics().width(' '));
-  editor->setMinimumHeight((16 + 1) * editor->fontMetrics().height());
-  editor->setSize(16 * 1024 * 1024);
   memorySource = SNES::Debugger::MemorySource::CPUBus;
-  layout->addWidget(editor);
+  layout->addWidget(editor, 0, 0);
 
   controlLayout = new QVBoxLayout;
   controlLayout->setSpacing(0);
-  layout->addLayout(controlLayout);
+  layout->addLayout(controlLayout, 0, 1);
+  layout->setColumnStretch(0, 1);
 
   source = new QComboBox;
   source->addItem("S-CPU bus");
@@ -51,22 +54,32 @@ MemoryEditor::MemoryEditor() {
 
   toolLayout = new QHBoxLayout;
   controlLayout->addLayout(toolLayout);
-  #define tool(widget, icon, text, slot) \
+  #define tool(widget, icon, text, slot, accel) \
     widget = new QToolButton; \
     toolLayout->addWidget(widget); \
     widget->setAutoRaise(true); \
-    widget->setIcon(QIcon(":16x16/mem-" icon ".png")); \
-    widget->setToolTip(text); \
-    connect(widget, SIGNAL(released()), this, SLOT(slot()))
-  tool(prevCodeButton, "prev-code",    "Previous Code",    prevCode);
-  tool(nextCodeButton, "next-code",    "Next Code",        nextCode);
-  tool(prevDataButton, "prev-data",    "Previous Data",    prevData);
-  tool(nextDataButton, "next-data",    "Next Data",        nextData);
-  tool(prevUnkButton,  "prev-unknown", "Previous Unknown", prevUnknown);
-  tool(nextUnkButton,  "next-unknown", "Next Unknown",     nextUnknown);
-  #undef tool
+    widget->setDefaultAction(new QAction(this)); \
+    widget->defaultAction()->setIcon(QIcon(":16x16/mem-" icon ".png")); \
+    widget->defaultAction()->setToolTip(text); \
+    widget->defaultAction()->setShortcut(accel); \
+    connect(widget->defaultAction(), SIGNAL(triggered()), this, SLOT(slot()))
+  tool(prevCodeButton, "prev-code",    "Previous Code",    prevCode, 0);
+  tool(nextCodeButton, "next-code",    "Next Code",        nextCode, 0);
+  tool(prevDataButton, "prev-data",    "Previous Data",    prevData, 0);
+  tool(nextDataButton, "next-data",    "Next Data",        nextData, 0);
+  tool(prevUnkButton,  "prev-unknown", "Previous Unknown", prevUnknown, 0);
+  tool(nextUnkButton,  "next-unknown", "Next Unknown",     nextUnknown, 0);
   toolLayout->addStretch();
-
+  
+  toolLayout = new QHBoxLayout;
+  controlLayout->addLayout(toolLayout);
+  tool(findButton,     "find",         "Find in Memory (Ctrl+F)",  search, Qt::Key_F | Qt::CTRL);
+  // TODO: other icons for these maybe
+  tool(findPrevButton, "prev-unknown", "Find again up (Shift+F3)", searchPrev, Qt::Key_F3 | Qt::SHIFT);
+  tool(findNextButton, "next-unknown", "Find again down (F3)",     searchNext, Qt::Key_F3);
+  toolLayout->addStretch();
+  #undef tool
+  
   spacer = new QWidget;
   spacer->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
   controlLayout->addWidget(spacer);
@@ -77,21 +90,28 @@ MemoryEditor::MemoryEditor() {
   importButton = new QPushButton("Import");
   controlLayout->addWidget(importButton);
 
+  statusBar = new QLabel;
+  layout->addWidget(statusBar, 1, 0, 1, 2);
+
+  connect(editor, SIGNAL(currentAddressChanged(qint64)), this, SLOT(showAddress(qint64)));
   connect(source, SIGNAL(currentIndexChanged(int)), this, SLOT(sourceChanged(int)));
   connect(addr, SIGNAL(textEdited(const QString&)), this, SLOT(updateOffset()));
   connect(addr, SIGNAL(returnPressed()), this, SLOT(updateOffset()));
   connect(refreshButton, SIGNAL(released()), this, SLOT(refresh()));
   connect(exportButton, SIGNAL(released()), this, SLOT(exportMemory()));
   connect(importButton, SIGNAL(released()), this, SLOT(importMemory()));
+  
+  sourceChanged(0);
 }
 
 void MemoryEditor::autoUpdate() {
-  if(SNES::cartridge.loaded() && autoUpdateBox->isChecked()) editor->refresh();
+  if(SNES::cartridge.loaded() && autoUpdateBox->isChecked()) {
+    editor->refresh(false);
+  }
 }
 
 void MemoryEditor::synchronize() {
   if(SNES::cartridge.loaded() == false) {
-    editor->setHtml("");
     source->setEnabled(false);
     addr->setEnabled(false);
     autoUpdateBox->setEnabled(false);
@@ -115,53 +135,56 @@ void MemoryEditor::show() {
 
 void MemoryEditor::sourceChanged(int index) {
   switch(index) { default:
-    case 0: memorySource = SNES::Debugger::MemorySource::CPUBus; editor->setSize(16 * 1024 * 1024); break;
-    case 1: memorySource = SNES::Debugger::MemorySource::APURAM; editor->setSize(64 * 1024);        break;
-    case 2: memorySource = SNES::Debugger::MemorySource::VRAM;   editor->setSize(64 * 1024);        break;
-    case 3: memorySource = SNES::Debugger::MemorySource::OAM;    editor->setSize(544);              break;
-    case 4: memorySource = SNES::Debugger::MemorySource::CGRAM;  editor->setSize(512);              break;
-    case 5: memorySource = SNES::Debugger::MemorySource::CartROM; editor->setSize(SNES::memory::cartrom.size()); break;
-    case 6: memorySource = SNES::Debugger::MemorySource::CartRAM; editor->setSize(SNES::memory::cartram.size()); break;
-    case 7: memorySource = SNES::Debugger::MemorySource::SA1Bus; editor->setSize(16 * 1024 * 1024); break;
-    case 8: memorySource = SNES::Debugger::MemorySource::SFXBus; editor->setSize(16 * 1024 * 1024); break;
+    case 0: memorySource = SNES::Debugger::MemorySource::CPUBus; editor->setEditorSize(16 * 1024 * 1024); break;
+    case 1: memorySource = SNES::Debugger::MemorySource::APUBus; editor->setEditorSize(64 * 1024);        break;
+    case 2: memorySource = SNES::Debugger::MemorySource::VRAM;   editor->setEditorSize(64 * 1024);        break;
+    case 3: memorySource = SNES::Debugger::MemorySource::OAM;    editor->setEditorSize(544);              break;
+    case 4: memorySource = SNES::Debugger::MemorySource::CGRAM;  editor->setEditorSize(512);              break;
+    case 5: memorySource = SNES::Debugger::MemorySource::CartROM; editor->setEditorSize(SNES::memory::cartrom.size()); break;
+    case 6: memorySource = SNES::Debugger::MemorySource::CartRAM; editor->setEditorSize(SNES::memory::cartram.size()); break;
+    case 7: memorySource = SNES::Debugger::MemorySource::SA1Bus; editor->setEditorSize(16 * 1024 * 1024); break;
+    case 8: memorySource = SNES::Debugger::MemorySource::SFXBus; editor->setEditorSize(8 * 1024 * 1024); break;
   }
 
-  editor->setOffset(hex(addr->text().toUtf8().data()));
-  editor->refresh();
+  updateOffset();
 }
 
 void MemoryEditor::refresh() {
-  if(SNES::cartridge.loaded() == false) {
-    editor->setHtml("");
-  } else {
-    if (memorySource == SNES::Debugger::MemorySource::CartROM) {
-      editor->setSize(SNES::memory::cartrom.size());
-    }
-  
-    editor->refresh();
-  }
+  editor->refresh();
 }
 
 void MemoryEditor::updateOffset() {
-  editor->setOffset(hex(addr->text().toUtf8().data()));
+  int offset = hex(addr->text().toUtf8().data());
+  
+  editor->verticalScrollBar()->setValue(offset / BYTES_PER_LINE);
+  editor->setCursorPosition(2 * offset);
   refresh();
 }
 
+void MemoryEditor::showAddress(qint64 address) {
+  if (address < 0) {
+    statusBar->setText("");
+  } else {
+    QString msg;
+    msg.sprintf("Address: 0x%06X", address);
+    statusBar->setText(msg);
+  }
+}
 
 void MemoryEditor::prevCode() {
-  gotoPrevious(MemHexEditor::UsageExec);
+  gotoPrevious(QHexEdit::UsageExec);
 }
 
 void MemoryEditor::nextCode() {
-  gotoNext(MemHexEditor::UsageExec);
+  gotoNext(QHexEdit::UsageExec);
 }
 
 void MemoryEditor::prevData() {
-  gotoPrevious(MemHexEditor::UsageRead | MemHexEditor::UsageWrite);
+  gotoPrevious(QHexEdit::UsageRead | QHexEdit::UsageWrite);
 }
 
 void MemoryEditor::nextData() {
-  gotoNext(MemHexEditor::UsageRead | MemHexEditor::UsageWrite);
+  gotoNext(QHexEdit::UsageRead | QHexEdit::UsageWrite);
 }
 
 void MemoryEditor::prevUnknown() {
@@ -173,14 +196,14 @@ void MemoryEditor::nextUnknown() {
 }
 
 void MemoryEditor::gotoPrevious(int type) {
-  int offset = (int)editor->offset();
+  int offset = (int)editor->cursorPosition() / 2;
   bool found = false;
   SNES::uint8 *usage;
   
   if (memorySource == SNES::Debugger::MemorySource::CPUBus) {
     usage = SNES::cpu.usage;
   }
-  else if (memorySource == SNES::Debugger::MemorySource::APURAM) {
+  else if (memorySource == SNES::Debugger::MemorySource::APUBus) {
     usage = SNES::smp.usage;
   }
   else if (memorySource == SNES::Debugger::MemorySource::CartROM) {
@@ -214,15 +237,15 @@ void MemoryEditor::gotoPrevious(int type) {
 }
 
 void MemoryEditor::gotoNext(int type) {
-  int offset = (int)editor->offset();
-  unsigned size = editor->size();
+  int offset = (int)editor->cursorPosition() / 2;
+  unsigned size = editor->editorSize();
   bool found = true;
   SNES::uint8 *usage;
   
   if (memorySource == SNES::Debugger::MemorySource::CPUBus) {
     usage = SNES::cpu.usage;
   }
-  else if (memorySource == SNES::Debugger::MemorySource::APURAM) {
+  else if (memorySource == SNES::Debugger::MemorySource::APUBus) {
     usage = SNES::smp.usage;
   }
   else if (memorySource == SNES::Debugger::MemorySource::CartROM) {
@@ -253,11 +276,103 @@ void MemoryEditor::gotoNext(int type) {
   }
 }
 
+void MemoryEditor::search() {
+  QDialog dlg(this);
+  dlg.setWindowTitle("Search Memory");
+  
+  QVBoxLayout *vbox = new QVBoxLayout;
+  dlg.setLayout(vbox);
+  
+  vbox->addWidget(new QLabel("Enter a hex string, or \"ASCII text\" (in quotes)"));
+  
+  QLineEdit *edit = new QLineEdit;
+  edit->setFont(QFont(Style::Monospace));
+  // TODO: put existing search string in box
+  vbox->addWidget(edit);
+  
+  QGridLayout *grid = new QGridLayout;
+  vbox->addLayout(grid);
+  
+  grid->addWidget(new QLabel("Search:"), 0, 0);
+  grid->addWidget(new QLabel("Start from:"), 1, 0);
+  QButtonGroup bgrpSearch, bgrpStart;
+  
+  QRadioButton *searchDown = new QRadioButton("Down");
+  bgrpSearch.addButton(searchDown);
+  grid->addWidget(searchDown, 0, 1);
+  searchDown->setChecked(true);
+  QRadioButton *searchUp = new QRadioButton("Up");
+  bgrpSearch.addButton(searchUp);
+  grid->addWidget(searchUp, 0, 2);
+  
+  QRadioButton *searchFromEnd = new QRadioButton("From start/end");
+  bgrpStart.addButton(searchFromEnd);
+  grid->addWidget(searchFromEnd, 1, 1);
+  searchFromEnd->setChecked(true);
+  QRadioButton *searchFromCur = new QRadioButton("From cursor");
+  bgrpStart.addButton(searchFromCur);
+  grid->addWidget(searchFromCur, 1, 2);
+  
+  QDialogButtonBox *bbox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+  connect(bbox, SIGNAL(accepted()), &dlg, SLOT(accept()));
+  connect(bbox, SIGNAL(rejected()), &dlg, SLOT(reject()));
+  grid->addWidget(bbox);
+  
+  if (dlg.exec()) {
+    QString searchText = edit->text().trimmed();
+    
+    // try quoted text
+    if (searchText.startsWith("\"") && searchText.endsWith("\"")) {
+      searchStr = searchText.mid(1, searchText.size() - 2).toUtf8();
+    } else {
+      searchStr = QByteArray::fromHex(edit->text().toUtf8());
+    }
+    
+    int offset = (int)editor->cursorPosition() / 2;
+    
+    if (searchDown->isChecked()) {
+      searchPos = searchFromEnd->isChecked() ? -1 : offset;
+      searchNext();	  
+    } else {
+      searchPos = searchFromEnd->isChecked() ? editor->editorSize() : offset;
+      searchPrev();
+    }
+  }
+}
+
+void MemoryEditor::searchNext() {
+  if (searchStr.size() == 0) return;
+
+  searchPos = editor->indexOf(searchStr, searchPos + 1);
+
+  if (searchPos >= 0) {
+    addr->setText(QString::number(searchPos, 16));
+    updateOffset();
+  } else {
+    QMessageBox::information(this, "Memory Editor", "Reached end of memory.", QMessageBox::Ok);
+    searchPos = -1;
+  }
+}
+
+void MemoryEditor::searchPrev() {
+  if (searchStr.size() == 0) return;
+
+  searchPos = editor->lastIndexOf(searchStr, searchPos - 1);
+
+  if (searchPos >= 0) {
+    addr->setText(QString::number(searchPos, 16));
+    updateOffset();
+  } else {
+    QMessageBox::information(this, "Memory Editor", "Reached beginning of memory.", QMessageBox::Ok);
+    searchPos = editor->editorSize();
+  }
+}
+
 // TODO: export/import expansion chip memory and cartridge RAM/ROM
 void MemoryEditor::exportMemory() {
   string basename = filepath(nall::basename(cartridge.fileName), config().path.data);
 
-  if(SNES::memory::cartram.size() != 0 && SNES::memory::cartram.size() != ~0) {
+  if(SNES::memory::cartram.size() != 0) {
     exportMemory(SNES::memory::cartram, string() << basename << "-sram.bin");
   }
   exportMemory(SNES::memory::wram, string() << basename << "-wram.bin");
@@ -270,7 +385,7 @@ void MemoryEditor::exportMemory() {
 void MemoryEditor::importMemory() {
   string basename = filepath(nall::basename(cartridge.fileName), config().path.data);
 
-  if(SNES::memory::cartram.size() != 0 && SNES::memory::cartram.size() != ~0) {
+  if(SNES::memory::cartram.size() != 0) {
     importMemory(SNES::memory::cartram, string() << basename << "-sram.bin");
   }
   importMemory(SNES::memory::wram, string() << basename << "-wram.bin");
@@ -299,18 +414,29 @@ void MemoryEditor::importMemory(SNES::Memory &memory, const string &filename) co
 }
 
 uint8_t MemoryEditor::reader(unsigned addr) {
-  return SNES::debugger.read(memorySource, addr);
+  if (SNES::cartridge.loaded()) {
+    SNES::debugger.bus_access = true;
+    uint8_t data = SNES::debugger.read(memorySource, addr);
+    SNES::debugger.bus_access = false;
+    return data;
+  }
+  
+  return 0;
 }
 
 void MemoryEditor::writer(unsigned addr, uint8_t data) {
-  SNES::debugger.write(memorySource, addr, data);
+  if (SNES::cartridge.loaded()) {
+    SNES::debugger.bus_access = true;
+    SNES::debugger.write(memorySource, addr, data);
+    SNES::debugger.bus_access = false;
+  }
 }
 
 uint8_t MemoryEditor::usage(unsigned addr) {
   if (memorySource == SNES::Debugger::MemorySource::CPUBus && addr < 1 << 24) {
     return SNES::cpu.usage[addr];
   }
-  else if (memorySource == SNES::Debugger::MemorySource::APURAM && addr < 1 << 16) {
+  else if (memorySource == SNES::Debugger::MemorySource::APUBus && addr < 1 << 16) {
     return SNES::smp.usage[addr];
   }
   else if (memorySource == SNES::Debugger::MemorySource::CartROM && addr < 1 << 24) {
@@ -319,51 +445,9 @@ uint8_t MemoryEditor::usage(unsigned addr) {
   else if (memorySource == SNES::Debugger::MemorySource::SA1Bus && addr < 1 << 24) {
     return SNES::sa1.usage[addr];
   }
-  else if (memorySource == SNES::Debugger::MemorySource::SFXBus && addr < 1 << 24) {
+  else if (memorySource == SNES::Debugger::MemorySource::SFXBus && addr < 1 << 23) {
     return SNES::superfx.usage[addr];
   }
   
   return 0;
-}
-
-void MemHexEditor::refresh() {
-  string output;
-  char temp[256];
-  unsigned offset = editorOffset;
-
-  for(unsigned y = 0; y < editorRows; y++) {
-    if(offset >= editorSize) break;
-    sprintf(temp, "%.4x:%.4x", (offset >> 16) & 0xffff, (offset >> 0) & 0xffff);
-    output << "<font color='#404040'>" << temp << "</font>&nbsp;&nbsp;";
-
-    for(unsigned x = 0; x < editorColumns; x++) {
-      if(offset >= editorSize) break;
-      sprintf(temp, "%.2x", reader ? reader(offset) : 0x00);
-      
-      string color;
-      uint8_t this_usage = usage ? usage(offset) : 0;
-      
-      if (this_usage & UsageExec && this_usage & UsageRead) {
-        color = (x & 1) ? "#800080" : "#ff00ff";
-      } else if (this_usage & UsageExec) {
-        // code: red text
-        color = (x & 1) ? "#800000" : "#ff0000";
-      } else if (this_usage & UsageRead || this_usage & UsageWrite) {
-        // data: blue text
-        color = (x & 1) ? "#000080" : "#0000ff";
-      } else {
-        // unknown: grey text
-        color = (x & 1) ? "#404040" : "#808080";
-      }
-      
-      output << "<font color='" << color << "'>" << temp << "</font>";
-      if(x != (editorColumns - 1)) output << "&nbsp;";
-      
-      offset++;
-    }
-
-    if(y != (editorRows - 1)) output << "<br>";
-  }
-
-  setHtml(output);
 }

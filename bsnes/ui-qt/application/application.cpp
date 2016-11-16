@@ -3,6 +3,7 @@ VideoDisplay display;
 Application application;
 
 #include "init.cpp"
+#include "arguments.cpp"
 
 VideoDisplay::VideoDisplay() {
   outputWidth = 0;
@@ -63,7 +64,11 @@ void Application::locateFile(string &filename, bool createDataDirectory) {
 int Application::main(int &argc, char **argv) {
   app = new App(argc, argv);
   #if !defined(PLATFORM_WIN)
-  app->setWindowIcon(QIcon(":/bsnes.png"));
+    #if defined(PLATFORM_OSX)
+    app->setWindowIcon(QIcon(":/bsnes_512.png"));
+    #else
+    app->setWindowIcon(QIcon(":/bsnes.png"));
+    #endif
   #else
   //Windows port uses 256x256 icon from resource file
   CoInitialize(0);
@@ -87,10 +92,7 @@ int Application::main(int &argc, char **argv) {
   SNES::system.init(&interface);
   mainWindow->system_loadSpecial_superGameBoy->setVisible(SNES::supergameboy.opened());
 
-  if(argc == 2) {
-    //if valid file was specified on the command-line, attempt to load it now
-    cartridge.loadNormal(argv[1]);
-  }
+  parseArguments();
 
   timer = new QTimer(this);
   connect(timer, SIGNAL(timeout()), this, SLOT(run()));
@@ -113,8 +115,7 @@ void Application::run() {
     app->quit();
     return;
   }
-
-  QApplication::processEvents();
+  
   utility.updateSystemState();
   mapper().poll();
 

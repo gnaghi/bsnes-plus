@@ -8,7 +8,6 @@ void SFXDebugger::op_step() {
   opcode_pc = (regs.pbr << 16) + regs.r[15] - 1;
   usage[opcode_pc] |= UsageOpcode;
 
-  opcode_edge = true;
   if(debugger.step_sfx &&
       (debugger.step_type == Debugger::StepType::StepInto ||
        (debugger.step_type >= Debugger::StepType::StepOver && debugger.call_count < 0))) {
@@ -20,8 +19,6 @@ void SFXDebugger::op_step() {
     debugger.breakpoint_test(Debugger::Breakpoint::Source::SFXBus, Debugger::Breakpoint::Mode::Exec, opcode_pc, 0x00);
   }
   if(step_event) step_event();
-  
-  opcode_edge = false;
 }
 
 uint8 SFXDebugger::op_read(uint16 addr) {
@@ -38,7 +35,9 @@ uint8 SFXDebugger::rombuffer_read() {
   uint32 fulladdr = (regs.rombr << 16) + regs.r[14];
   usage[fulladdr] |= UsageRead;
   
-  uint8 data = sfxdebugbus.read(fulladdr);
+  SNES::debugger.bus_access = true;
+  uint8 data = superfxbus.read(fulladdr);
+  SNES::debugger.bus_access = false;
   
   int offset = cartridge.rom_offset(fulladdr);
   if (offset >= 0) (*cart_usage)[offset] |= UsageRead;
@@ -51,7 +50,9 @@ uint8 SFXDebugger::rambuffer_read(uint16 addr) {
   uint32 fulladdr = 0x700000 + (regs.rambr << 16) + addr;
   usage[fulladdr] |= UsageRead;
   
-  uint8 data = sfxdebugbus.read(fulladdr);
+  SNES::debugger.bus_access = true;
+  uint8 data = superfxbus.read(fulladdr);
+  SNES::debugger.bus_access = false;
   
   debugger.breakpoint_test(Debugger::Breakpoint::Source::SFXBus, Debugger::Breakpoint::Mode::Read, fulladdr, data);
   return SuperFX::rambuffer_read(addr);
@@ -66,10 +67,9 @@ void SFXDebugger::rambuffer_write(uint16 addr, uint8 data) {
 }
 
 SFXDebugger::SFXDebugger() {
-  usage = new uint8[1 << 24]();
+  usage = new uint8[1 << 23]();
   cart_usage = &SNES::cpu.cart_usage;
   opcode_pc = 0;
-  opcode_edge = false;
 }
 
 SFXDebugger::~SFXDebugger() {
@@ -108,7 +108,7 @@ bool SFXDebugger::property(unsigned id, string &name, string &value) {
   item("Screen Base Register (SCBR)", string("0x", hex<2>(regs.scbr)))
   
   item("$3039", "")
-  item("Clock Register (CLSR)", regs.clsr ? "21.4 MHz" : "10.7 MHz")
+  item("Clock Register (CLSR)", regs.clsr.divider > 1 ? "21.4 MHz" : "10.7 MHz")
   
   item("$303a", "")
   string md, ht;
@@ -152,6 +152,60 @@ bool SFXDebugger::property(unsigned id, string &name, string &value) {
 
   #undef item
   return false;
+}
+
+unsigned SFXDebugger::getRegister(unsigned id) {
+  if (id < 16) {
+    return regs.r[id];
+  } else switch ((Register)id) {
+  case RegisterSFR:  return regs.sfr;
+  }
+  
+  return 0;
+}
+
+void SFXDebugger::setRegister(unsigned id, unsigned value) {
+  if (id < 16) {
+    regs.r[id] = value; return;
+  } else switch ((Register)id) {
+  case RegisterSFR:  regs.sfr = value; return;
+  }
+}
+
+bool SFXDebugger::getFlag(unsigned id) {
+  switch (id) {
+  case FlagI:  return regs.sfr.irq;
+  case FlagB:  return regs.sfr.b;
+  case FlagIH: return regs.sfr.ih;
+  case FlagIL: return regs.sfr.il;
+  case FlagA2: return regs.sfr.alt2;
+  case FlagA1: return regs.sfr.alt1;
+  case FlagR:  return regs.sfr.r;
+  case FlagG:  return regs.sfr.g;
+  case FlagV:  return regs.sfr.ov;
+  case FlagN:  return regs.sfr.s;
+  case FlagC:  return regs.sfr.cy;
+  case FlagZ:  return regs.sfr.z;
+  }
+  
+  return false;
+}
+
+void SFXDebugger::setFlag(unsigned id, bool value) {
+  switch (id) {
+  case FlagI:  regs.sfr.irq  = value; return;
+  case FlagB:  regs.sfr.b    = value; return;
+  case FlagIH: regs.sfr.ih   = value; return;
+  case FlagIL: regs.sfr.il   = value; return;
+  case FlagA2: regs.sfr.alt2 = value; return;
+  case FlagA1: regs.sfr.alt1 = value; return;
+  case FlagR:  regs.sfr.r    = value; return;
+  case FlagG:  regs.sfr.g    = value; return;
+  case FlagV:  regs.sfr.ov   = value; return;
+  case FlagN:  regs.sfr.s    = value; return;
+  case FlagC:  regs.sfr.cy   = value; return;
+  case FlagZ:  regs.sfr.z    = value; return;
+  }
 }
 
 #endif

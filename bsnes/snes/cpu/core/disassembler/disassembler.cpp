@@ -1,26 +1,26 @@
 #ifdef CPUCORE_CPP
 
+uint8 CPUcore::disassembler_read(uint32 addr)
+{
+  return 0;
+}
+
 uint8 CPUcore::dreadb(uint32 addr) {
-  if((addr & 0x40ffff) >= 0x2000 && (addr & 0x40ffff) <= 0x5fff) {
-    //$[00-3f|80-bf]:[2000-5fff]
-    //do not read MMIO registers within debugger
-    return 0x00;
-  }
-  return bus.read(addr);
+  return disassembler_read(addr);
 }
 
 uint16 CPUcore::dreadw(uint32 addr) {
   uint16 r;
-  r  = dreadb((addr + 0) & 0xffffff) <<  0;
-  r |= dreadb((addr + 1) & 0xffffff) <<  8;
+  r  = dreadb(addr + 0) <<  0;
+  r |= dreadb(addr + 1) <<  8;
   return r;
 }
 
 uint32 CPUcore::dreadl(uint32 addr) {
   uint32 r;
-  r  = dreadb((addr + 0) & 0xffffff) <<  0;
-  r |= dreadb((addr + 1) & 0xffffff) <<  8;
-  r |= dreadb((addr + 2) & 0xffffff) << 16;
+  r  = dreadb(addr + 0) <<  0;
+  r |= dreadb(addr + 1) <<  8;
+  r |= dreadb(addr + 2) << 16;
   return r;
 }
 
@@ -104,15 +104,10 @@ uint32 CPUcore::decode(uint8 offset_type, uint32 addr, uint32 pc) {
   return(r & 0xffffff);
 }
 
-void CPUcore::disassemble_opcode(char *output, uint32 addr) {
+void CPUcore::disassemble_opcode(char *output, uint32 addr, bool hclocks) {
   static reg24_t pc;
   char t[256];
   char *s = output;
-
-  if(false /* in_opcode() == true */) {
-    strcpy(s, "?????? <CPU within opcode>");
-    return;
-  }
 
   pc.d = addr;
   sprintf(s, "%.6x ", (uint32)pc.d);
@@ -197,7 +192,7 @@ void CPUcore::disassemble_opcode(char *output, uint32 addr) {
     case 0x3f: sprintf(t, "and $%.6x,x [%.6x]", op24, decode(OPTYPE_LONGX, op24, addr)); break;
     case 0x40: sprintf(t, "rti                   "); break;
     case 0x41: sprintf(t, "eor ($%.2x,x)   [%.6x]", op8, decode(OPTYPE_IDPX, op8, addr)); break;
-    case 0x42: sprintf(t, "wdm                   "); break;
+    case 0x42: sprintf(t, "wdm #$%.2x              ", op8); break;
     case 0x43: sprintf(t, "eor $%.2x,s     [%.6x]", op8, decode(OPTYPE_SR, op8, addr)); break;
     case 0x44: sprintf(t, "mvp $%.2x,$%.2x           ", op1, op8); break;
     case 0x45: sprintf(t, "eor $%.2x       [%.6x]", op8, decode(OPTYPE_DP, op8, addr)); break;
@@ -230,7 +225,7 @@ void CPUcore::disassemble_opcode(char *output, uint32 addr) {
     case 0x5f: sprintf(t, "eor $%.6x,x [%.6x]", op24, decode(OPTYPE_LONGX, op24, addr)); break;
     case 0x60: sprintf(t, "rts                   "); break;
     case 0x61: sprintf(t, "adc ($%.2x,x)   [%.6x]", op8, decode(OPTYPE_IDPX, op8, addr)); break;
-    case 0x62: sprintf(t, "per $%.4x     [%.6x]", op16, decode(OPTYPE_ADDR, op16, addr)); break;
+    case 0x62: sprintf(t, "per $%.4x             ", uint16(decode(OPTYPE_RELW, op16, addr))); break;
     case 0x63: sprintf(t, "adc $%.2x,s     [%.6x]", op8, decode(OPTYPE_SR, op8, addr)); break;
     case 0x64: sprintf(t, "stz $%.2x       [%.6x]", op8, decode(OPTYPE_DP, op8, addr)); break;
     case 0x65: sprintf(t, "adc $%.2x       [%.6x]", op8, decode(OPTYPE_DP, op8, addr)); break;
@@ -351,7 +346,7 @@ void CPUcore::disassemble_opcode(char *output, uint32 addr) {
     case 0xd1: sprintf(t, "cmp ($%.2x),y   [%.6x]", op8, decode(OPTYPE_IDPY, op8, addr)); break;
     case 0xd2: sprintf(t, "cmp ($%.2x)     [%.6x]", op8, decode(OPTYPE_IDP, op8, addr)); break;
     case 0xd3: sprintf(t, "cmp ($%.2x,s),y [%.6x]", op8, decode(OPTYPE_ISRY, op8, addr)); break;
-    case 0xd4: sprintf(t, "pei ($%.2x)     [%.6x]", op8, decode(OPTYPE_IDP, op8, addr)); break;
+    case 0xd4: sprintf(t, "pei ($%.2x)     [%.6x]", op8, decode(OPTYPE_DP, op8, addr)); break;
     case 0xd5: sprintf(t, "cmp $%.2x,x     [%.6x]", op8, decode(OPTYPE_DPX, op8, addr)); break;
     case 0xd6: sprintf(t, "dec $%.2x,x     [%.6x]", op8, decode(OPTYPE_DPX, op8, addr)); break;
     case 0xd7: sprintf(t, "cmp [$%.2x],y   [%.6x]", op8, decode(OPTYPE_ILDPY, op8, addr)); break;
@@ -385,7 +380,7 @@ void CPUcore::disassemble_opcode(char *output, uint32 addr) {
     case 0xf1: sprintf(t, "sbc ($%.2x),y   [%.6x]", op8, decode(OPTYPE_IDPY, op8, addr)); break;
     case 0xf2: sprintf(t, "sbc ($%.2x)     [%.6x]", op8, decode(OPTYPE_IDP, op8, addr)); break;
     case 0xf3: sprintf(t, "sbc ($%.2x,s),y [%.6x]", op8, decode(OPTYPE_ISRY, op8, addr)); break;
-    case 0xf4: sprintf(t, "pea $%.4x     [%.6x]", op16, decode(OPTYPE_ADDR, op16, addr)); break;
+    case 0xf4: sprintf(t, "pea $%.4x             ", op16); break;
     case 0xf5: sprintf(t, "sbc $%.2x,x     [%.6x]", op8, decode(OPTYPE_DPX, op8, addr)); break;
     case 0xf6: sprintf(t, "inc $%.2x,x     [%.6x]", op8, decode(OPTYPE_DPX, op8, addr)); break;
     case 0xf7: sprintf(t, "sbc [$%.2x],y   [%.6x]", op8, decode(OPTYPE_ILDPY, op8, addr)); break;
@@ -429,55 +424,11 @@ void CPUcore::disassemble_opcode(char *output, uint32 addr) {
   strcat(s, t);
   strcat(s, " ");
 
-  sprintf(t, "V:%3d H:%4d", cpu.vcounter(), cpu.hcounter());
+  if (hclocks)
+    sprintf(t, "V:%3d H:%4d F:%2d", cpu.vcounter(), cpu.hcounter(), cpu.framecounter());
+  else
+    sprintf(t, "V:%3d H:%3d F:%2d", cpu.vcounter(), cpu.hdot(), cpu.framecounter());
   strcat(s, t);
-}
-
-//opcode_length() retrieves the length of the next opcode
-//to be executed. It is used by the debugger to step over,
-//disable and proceed cpu opcodes.
-//
-//5 and 6 are special cases, 5 is used for #consts based on
-//the A register size, 6 for the X/Y register size. the
-//rest are literal sizes. There's no need to test for
-//emulation mode, as regs.p.m/regs.p.x should *always* be
-//set in emulation mode.
-
-uint8 CPUcore::opcode_length() {
-  uint8 op, len;
-  static uint8 op_len_tbl[256] = {
-  //0,1,2,3,  4,5,6,7,  8,9,a,b,  c,d,e,f
-
-    2,2,2,2,  2,2,2,2,  1,5,1,1,  3,3,3,4, //0x0n
-    2,2,2,2,  2,2,2,2,  1,3,1,1,  3,3,3,4, //0x1n
-    3,2,4,2,  2,2,2,2,  1,5,1,1,  3,3,3,4, //0x2n
-    2,2,2,2,  2,2,2,2,  1,3,1,1,  3,3,3,4, //0x3n
-
-    1,2,2,2,  3,2,2,2,  1,5,1,1,  3,3,3,4, //0x4n
-    2,2,2,2,  3,2,2,2,  1,3,1,1,  4,3,3,4, //0x5n
-    1,2,3,2,  2,2,2,2,  1,5,1,1,  3,3,3,4, //0x6n
-    2,2,2,2,  2,2,2,2,  1,3,1,1,  3,3,3,4, //0x7n
-
-    2,2,3,2,  2,2,2,2,  1,5,1,1,  3,3,3,4, //0x8n
-    2,2,2,2,  2,2,2,2,  1,3,1,1,  3,3,3,4, //0x9n
-    6,2,6,2,  2,2,2,2,  1,5,1,1,  3,3,3,4, //0xan
-    2,2,2,2,  2,2,2,2,  1,3,1,1,  3,3,3,4, //0xbn
-
-    6,2,2,2,  2,2,2,2,  1,5,1,1,  3,3,3,4, //0xcn
-    2,2,2,2,  2,2,2,2,  1,3,1,1,  3,3,3,4, //0xdn
-    6,2,2,2,  2,2,2,2,  1,5,1,1,  3,3,3,4, //0xen
-    2,2,2,2,  3,2,2,2,  1,3,1,1,  3,3,3,4  //0xfn
-  };
-
-  if(false /* in_opcode() == true */) {
-    return 0;
-  }
-
-  op  = dreadb(regs.pc.d);
-  len = op_len_tbl[op];
-  if(len == 5) return (regs.e || regs.p.m) ? 2 : 3;
-  if(len == 6) return (regs.e || regs.p.x) ? 2 : 3;
-  return len;
 }
 
 #endif

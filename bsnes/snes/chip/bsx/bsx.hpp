@@ -22,15 +22,15 @@ private:
   } regs;
 };
 
-class BSXCart : public MMIO {
+class BSXCart : public Memory {
 public:
   void init();
   void enable();
   void power();
   void reset();
 
-  uint8 mmio_read(unsigned addr);
-  void mmio_write(unsigned addr, uint8 data);
+  uint8 read(unsigned addr);
+  void write(unsigned addr, uint8 data);
 
   BSXCart();
   ~BSXCart();
@@ -56,13 +56,10 @@ public:
 
 private:
   struct {
-    unsigned command;
-    uint8 write_old;
-    uint8 write_new;
-
-    bool flash_enable;
-    bool read_enable;
-    bool write_enable;
+    unsigned short command;
+    bool csr, esr;
+    bool vendor_info;
+    bool writebyte;
   } regs;
 };
 

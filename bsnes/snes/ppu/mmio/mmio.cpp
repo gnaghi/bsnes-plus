@@ -43,6 +43,26 @@ void PPU::vram_write(unsigned addr, uint8 data) {
   }
 }
 
+uint8 PPU::oam_read(unsigned addr) {
+  // address is handled by mmio_r2138
+  return memory::oam[addr];
+}
+
+void PPU::oam_write(unsigned addr, uint8 data) {
+  // address/data are handled by mmio_w2104
+  oam.update(addr, data);
+}
+
+uint8 PPU::cgram_read(unsigned addr) {
+  // address is handled by mmio_r213b
+  return memory::cgram[addr];
+}
+
+void PPU::cgram_write(unsigned addr, uint8 data) {
+  // address/data are handled by mmio_w2122
+  memory::cgram[addr] = data;
+}
+
 void PPU::mmio_update_video_mode() {
   switch(regs.bgmode) {
     case 0: {
@@ -177,10 +197,10 @@ void PPU::mmio_w2104(uint8 data) {
 
   if(latch == 0) regs.oam_latchdata = data;
   if(addr & 0x0200) {
-    oam.update(addr, data);
+    oam_write(addr, data);
   } else if(latch == 1) {
-    oam.update((addr & ~1) + 0, regs.oam_latchdata);
-    oam.update((addr & ~1) + 1, data);
+    oam_write((addr & ~1) + 0, regs.oam_latchdata);
+    oam_write((addr & ~1) + 1, data);
   }
   oam.set_first_sprite();
 }
@@ -399,8 +419,8 @@ void PPU::mmio_w2122(uint8 data) {
   if(latch == 0) {
     regs.cgram_latchdata = data;
   } else {
-    memory::cgram[(addr & ~1) + 0] = regs.cgram_latchdata;
-    memory::cgram[(addr & ~1) + 1] = data & 0x7f;
+    cgram_write((addr & ~1) + 0, regs.cgram_latchdata);
+    cgram_write((addr & ~1) + 1, data & 0x7f);
   }
 }
 
@@ -553,6 +573,9 @@ void PPU::mmio_w2133(uint8 data) {
 //MPYL
 uint8 PPU::mmio_r2134() {
   unsigned result = ((int16)regs.m7a * (int8)(regs.m7b >> 8));
+  if(Memory::debugger_access())
+    return result >> 0;
+  
   regs.ppu1_mdr = (result >>  0);
   return regs.ppu1_mdr;
 }
@@ -560,6 +583,9 @@ uint8 PPU::mmio_r2134() {
 //MPYM
 uint8 PPU::mmio_r2135() {
   unsigned result = ((int16)regs.m7a * (int8)(regs.m7b >> 8));
+  if(Memory::debugger_access())
+    return result >> 8;
+  
   regs.ppu1_mdr = (result >>  8);
   return regs.ppu1_mdr;
 }
@@ -567,30 +593,41 @@ uint8 PPU::mmio_r2135() {
 //MPYH
 uint8 PPU::mmio_r2136() {
   unsigned result = ((int16)regs.m7a * (int8)(regs.m7b >> 8));
+  if(Memory::debugger_access())
+    return result >> 16;
+    
   regs.ppu1_mdr = (result >> 16);
   return regs.ppu1_mdr;
 }
 
 //SLHV
 uint8 PPU::mmio_r2137() {
-  if(cpu.pio() & 0x80) latch_counters();
+  if(!Memory::debugger_access() && (cpu.pio() & 0x80)) latch_counters();
   return cpu.regs.mdr;
 }
 
 //OAMDATAREAD
 uint8 PPU::mmio_r2138() {
-  uint10 addr = regs.oam_addr++;
+  uint10 addr = regs.oam_addr;
   if(regs.display_disable == false && vcounter() < (!regs.overscan ? 225 : 240)) addr = regs.oam_iaddr;
   if(addr & 0x0200) addr &= 0x021f;
 
-  regs.ppu1_mdr = memory::oam[addr];
+  if(Memory::debugger_access())
+    return oam_read(addr);
+
+  regs.oam_addr++;
+  regs.ppu1_mdr = oam_read(addr);
   oam.set_first_sprite();
   return regs.ppu1_mdr;
 }
 
 //VMDATALREAD
 uint8 PPU::mmio_r2139() {
+  if(Memory::debugger_access())
+    return regs.vram_readbuffer >> 0;
+  
   uint16 addr = get_vram_address() + 0;
+  
   regs.ppu1_mdr = regs.vram_readbuffer >> 0;
   if(regs.vram_incmode == 0) {
     addr &= ~1;
@@ -603,7 +640,11 @@ uint8 PPU::mmio_r2139() {
 
 //VMDATAHREAD
 uint8 PPU::mmio_r213a() {
+  if(Memory::debugger_access())
+    return regs.vram_readbuffer >> 8;
+    
   uint16 addr = get_vram_address() + 1;
+    
   regs.ppu1_mdr = regs.vram_readbuffer >> 8;
   if(regs.vram_incmode == 1) {
     addr &= ~1;
@@ -617,81 +658,120 @@ uint8 PPU::mmio_r213a() {
 //CGDATAREAD
 uint8 PPU::mmio_r213b() {
   bool latch = regs.cgram_addr & 1;
-  uint9 addr = regs.cgram_addr++;
+  uint9 addr = regs.cgram_addr;
   if(regs.display_disable == false
   && vcounter() > 0 && vcounter() < (!regs.overscan ? 225 : 240)
   && hcounter() >= 88 && hcounter() < 1096
   ) addr = regs.cgram_iaddr;
 
+  uint8 r = regs.ppu2_mdr;
+
   if(latch == 0) {
-    regs.ppu2_mdr  = memory::cgram[addr];
+    r  = cgram_read(addr);
   } else {
-    regs.ppu2_mdr &= 0x80;
-    regs.ppu2_mdr |= memory::cgram[addr];
+    r &= 0x80;
+    r |= cgram_read(addr);
   }
+  
+  if(Memory::debugger_access())
+    return r;
+  
+  regs.ppu2_mdr = r;
+  regs.cgram_addr++;
   return regs.ppu2_mdr;
 }
 
 //OPHCT
 uint8 PPU::mmio_r213c() {
+  uint8 r = regs.ppu2_mdr;
+
   if(regs.latch_hcounter == 0) {
-    regs.ppu2_mdr  = (regs.hcounter >> 0);
+    r  = (regs.hcounter >> 0);
   } else {
-    regs.ppu2_mdr &= 0xfe;
-    regs.ppu2_mdr |= (regs.hcounter >> 8) & 1;
+    r &= 0xfe;
+    r |= (regs.hcounter >> 8) & 1;
   }
+  
+  if(Memory::debugger_access())
+    return r;
+  
+  regs.ppu2_mdr = r;
   regs.latch_hcounter ^= 1;
   return regs.ppu2_mdr;
 }
 
 //OPVCT
 uint8 PPU::mmio_r213d() {
+  uint8 r = regs.ppu2_mdr;
+
   if(regs.latch_vcounter == 0) {
-    regs.ppu2_mdr  = (regs.vcounter >> 0);
+    r  = (regs.vcounter >> 0);
   } else {
-    regs.ppu2_mdr &= 0xfe;
-    regs.ppu2_mdr |= (regs.vcounter >> 8) & 1;
+    r &= 0xfe;
+    r |= (regs.vcounter >> 8) & 1;
   }
+  
+  if(Memory::debugger_access())
+    return r;
+  
+  regs.ppu2_mdr = r;
   regs.latch_vcounter ^= 1;
   return regs.ppu2_mdr;
 }
 
 //STAT77
 uint8 PPU::mmio_r213e() {
-  regs.ppu1_mdr &= 0x10;
-  regs.ppu1_mdr |= oam.regs.time_over << 7;
-  regs.ppu1_mdr |= oam.regs.range_over << 6;
-  regs.ppu1_mdr |= ppu1_version & 0x0f;
+  uint8 r = regs.ppu1_mdr;
+
+  r &= 0x10;
+  r |= oam.regs.time_over << 7;
+  r |= oam.regs.range_over << 6;
+  r |= ppu1_version & 0x0f;
+  
+  if(Memory::debugger_access())
+    return r;
+  
+  regs.ppu1_mdr = r;
   return regs.ppu1_mdr;
 }
 
 //STAT78
 uint8 PPU::mmio_r213f() {
-  regs.latch_hcounter = 0;
-  regs.latch_vcounter = 0;
+  uint8 r = regs.ppu2_mdr;
 
-  regs.ppu2_mdr &= 0x20;
-  regs.ppu2_mdr |= field() << 7;
-  if((cpu.pio() & 0x80) == 0) {
-    regs.ppu2_mdr |= 0x40;
-  } else if(regs.counters_latched) {
-    regs.ppu2_mdr |= 0x40;
-    regs.counters_latched = false;
+  if(!Memory::debugger_access()) {
+    regs.latch_hcounter = 0;
+    regs.latch_vcounter = 0;
   }
-  regs.ppu2_mdr |= (system.region() == System::Region::NTSC ? 0 : 1) << 4;
-  regs.ppu2_mdr |= ppu2_version & 0x0f;
+
+  r &= 0x20;
+  r |= field() << 7;
+  if((cpu.pio() & 0x80) == 0) {
+    r |= 0x40;
+  } else if(regs.counters_latched) {
+    r |= 0x40;
+    if(!Memory::debugger_access())
+      regs.counters_latched = false;
+  }
+  r |= (system.region() == System::Region::NTSC ? 0 : 1) << 4;
+  r |= ppu2_version & 0x0f;
+  
+  if(Memory::debugger_access())
+    return r;
+  
+  regs.ppu2_mdr = r;
   return regs.ppu2_mdr;
 }
 
 void PPU::mmio_reset() {
-  regs.ppu1_mdr = 0xff;
-  regs.ppu2_mdr = 0xff;
+  regs.ppu1_mdr = random(0xff);
+  regs.ppu2_mdr = random(0xff);
 
-  regs.vram_readbuffer = 0x0000;
-  regs.oam_latchdata = 0x00;
-  regs.cgram_latchdata = 0x00;
-  regs.bgofs_latchdata = 0x00;
-  regs.mode7_latchdata = 0x00;
+  regs.vram_readbuffer = random(0x0000);
+  regs.oam_latchdata = random(0x00);
+  regs.cgram_latchdata = random(0x00);
+  regs.bgofs_latchdata = random(0x00);
+  regs.mode7_latchdata = random(0x00);
   regs.counters_latched = false;
   regs.latch_hcounter = 0;
   regs.latch_vcounter = 0;
@@ -705,58 +785,58 @@ void PPU::mmio_reset() {
 
   //$2102  OAMADDL
   //$2103  OAMADDH
-  regs.oam_baseaddr = 0x0000;
-  regs.oam_addr = 0x0000;
-  regs.oam_priority = false;
+  regs.oam_baseaddr = random(0x0000);
+  regs.oam_addr = random(0x0000);
+  regs.oam_priority = random(false);
 
   //$2105  BGMODE
   regs.bg3_priority = false;
   regs.bgmode = 0;
 
   //$210d  BG1HOFS
-  regs.mode7_hoffset = 0x0000;
+  regs.mode7_hoffset = random(0x0000);
 
   //$210e  BG1VOFS
-  regs.mode7_voffset = 0x0000;
+  regs.mode7_voffset = random(0x0000);
 
   //$2115  VMAIN
-  regs.vram_incmode = 1;
-  regs.vram_mapping = 0;
+  regs.vram_incmode = random(1);
+  regs.vram_mapping = random(0);
   regs.vram_incsize = 1;
 
   //$2116  VMADDL
   //$2117  VMADDH
-  regs.vram_addr = 0x0000;
+  regs.vram_addr = random(0x0000);
 
   //$211a  M7SEL
-  regs.mode7_repeat = 0;
-  regs.mode7_vflip = false;
-  regs.mode7_hflip = false;
+  regs.mode7_repeat = random(0);
+  regs.mode7_vflip = random(false);
+  regs.mode7_hflip = random(false);
 
   //$211b  M7A
-  regs.m7a = 0x0000;
+  regs.m7a = random(0x0000);
 
   //$211c  M7B
-  regs.m7b = 0x0000;
+  regs.m7b = random(0x0000);
 
   //$211d  M7C
-  regs.m7c = 0x0000;
+  regs.m7c = random(0x0000);
 
   //$211e  M7D
-  regs.m7d = 0x0000;
+  regs.m7d = random(0x0000);
 
   //$211f  M7X
-  regs.m7x = 0x0000;
+  regs.m7x = random(0x0000);
 
   //$2120  M7Y
-  regs.m7y = 0x0000;
+  regs.m7y = random(0x0000);
 
   //$2121  CGADD
-  regs.cgram_addr = 0x0000;
+  regs.cgram_addr = random(0x0000);
 
   //$2133  SETINI
-  regs.mode7_extbg = false;
-  regs.pseudo_hires = false;
+  regs.mode7_extbg = random(false);
+  regs.pseudo_hires = random(false);
   regs.overscan = false;
   regs.interlace = false;
 
@@ -768,39 +848,40 @@ void PPU::mmio_reset() {
 }
 
 uint8 PPU::mmio_read(unsigned addr) {
-  cpu.synchronize_ppu();
+  if(!Memory::debugger_access())
+    cpu.synchronize_ppu();
 
-  switch(addr & 0xffff) {
-    case 0x2104:
-    case 0x2105:
-    case 0x2106:
-    case 0x2108:
-    case 0x2109:
-    case 0x210a:
-    case 0x2114:
-    case 0x2115:
-    case 0x2116:
-    case 0x2118:
-    case 0x2119:
-    case 0x211a:
-    case 0x2124:
-    case 0x2125:
-    case 0x2126:
-    case 0x2128:
-    case 0x2129:
-    case 0x212a: return regs.ppu1_mdr;
-    case 0x2134: return mmio_r2134();  //MPYL
-    case 0x2135: return mmio_r2135();  //MPYM
-    case 0x2136: return mmio_r2136();  //MYPH
-    case 0x2137: return mmio_r2137();  //SLHV
-    case 0x2138: return mmio_r2138();  //OAMDATAREAD
-    case 0x2139: return mmio_r2139();  //VMDATALREAD
-    case 0x213a: return mmio_r213a();  //VMDATAHREAD
-    case 0x213b: return mmio_r213b();  //CGDATAREAD
-    case 0x213c: return mmio_r213c();  //OPHCT
-    case 0x213d: return mmio_r213d();  //OPVCT
-    case 0x213e: return mmio_r213e();  //STAT77
-    case 0x213f: return mmio_r213f();  //STAT78
+  switch(addr & 0x3f) {
+    case 0x04:
+    case 0x05:
+    case 0x06:
+    case 0x08:
+    case 0x09:
+    case 0x0a:
+    case 0x14:
+    case 0x15:
+    case 0x16:
+    case 0x18:
+    case 0x19:
+    case 0x1a:
+    case 0x24:
+    case 0x25:
+    case 0x26:
+    case 0x28:
+    case 0x29:
+    case 0x2a: return regs.ppu1_mdr;
+    case 0x34: return mmio_r2134();  //MPYL
+    case 0x35: return mmio_r2135();  //MPYM
+    case 0x36: return mmio_r2136();  //MYPH
+    case 0x37: return mmio_r2137();  //SLHV
+    case 0x38: return mmio_r2138();  //OAMDATAREAD
+    case 0x39: return mmio_r2139();  //VMDATALREAD
+    case 0x3a: return mmio_r213a();  //VMDATAHREAD
+    case 0x3b: return mmio_r213b();  //CGDATAREAD
+    case 0x3c: return mmio_r213c();  //OPHCT
+    case 0x3d: return mmio_r213d();  //OPVCT
+    case 0x3e: return mmio_r213e();  //STAT77
+    case 0x3f: return mmio_r213f();  //STAT78
   }
 
   return cpu.regs.mdr;
@@ -809,59 +890,59 @@ uint8 PPU::mmio_read(unsigned addr) {
 void PPU::mmio_write(unsigned addr, uint8 data) {
   cpu.synchronize_ppu();
 
-  switch(addr & 0xffff) {
-    case 0x2100: return mmio_w2100(data);  //INIDISP
-    case 0x2101: return mmio_w2101(data);  //OBSEL
-    case 0x2102: return mmio_w2102(data);  //OAMADDL
-    case 0x2103: return mmio_w2103(data);  //OAMADDH
-    case 0x2104: return mmio_w2104(data);  //OAMDATA
-    case 0x2105: return mmio_w2105(data);  //BGMODE
-    case 0x2106: return mmio_w2106(data);  //MOSAIC
-    case 0x2107: return mmio_w2107(data);  //BG1SC
-    case 0x2108: return mmio_w2108(data);  //BG2SC
-    case 0x2109: return mmio_w2109(data);  //BG3SC
-    case 0x210a: return mmio_w210a(data);  //BG4SC
-    case 0x210b: return mmio_w210b(data);  //BG12NBA
-    case 0x210c: return mmio_w210c(data);  //BG34NBA
-    case 0x210d: return mmio_w210d(data);  //BG1HOFS
-    case 0x210e: return mmio_w210e(data);  //BG1VOFS
-    case 0x210f: return mmio_w210f(data);  //BG2HOFS
-    case 0x2110: return mmio_w2110(data);  //BG2VOFS
-    case 0x2111: return mmio_w2111(data);  //BG3HOFS
-    case 0x2112: return mmio_w2112(data);  //BG3VOFS
-    case 0x2113: return mmio_w2113(data);  //BG4HOFS
-    case 0x2114: return mmio_w2114(data);  //BG4VOFS
-    case 0x2115: return mmio_w2115(data);  //VMAIN
-    case 0x2116: return mmio_w2116(data);  //VMADDL
-    case 0x2117: return mmio_w2117(data);  //VMADDH
-    case 0x2118: return mmio_w2118(data);  //VMDATAL
-    case 0x2119: return mmio_w2119(data);  //VMDATAH
-    case 0x211a: return mmio_w211a(data);  //M7SEL
-    case 0x211b: return mmio_w211b(data);  //M7A
-    case 0x211c: return mmio_w211c(data);  //M7B
-    case 0x211d: return mmio_w211d(data);  //M7C
-    case 0x211e: return mmio_w211e(data);  //M7D
-    case 0x211f: return mmio_w211f(data);  //M7X
-    case 0x2120: return mmio_w2120(data);  //M7Y
-    case 0x2121: return mmio_w2121(data);  //CGADD
-    case 0x2122: return mmio_w2122(data);  //CGDATA
-    case 0x2123: return mmio_w2123(data);  //W12SEL
-    case 0x2124: return mmio_w2124(data);  //W34SEL
-    case 0x2125: return mmio_w2125(data);  //WOBJSEL
-    case 0x2126: return mmio_w2126(data);  //WH0
-    case 0x2127: return mmio_w2127(data);  //WH1
-    case 0x2128: return mmio_w2128(data);  //WH2
-    case 0x2129: return mmio_w2129(data);  //WH3
-    case 0x212a: return mmio_w212a(data);  //WBGLOG
-    case 0x212b: return mmio_w212b(data);  //WOBJLOG
-    case 0x212c: return mmio_w212c(data);  //TM
-    case 0x212d: return mmio_w212d(data);  //TS
-    case 0x212e: return mmio_w212e(data);  //TMW
-    case 0x212f: return mmio_w212f(data);  //TSW
-    case 0x2130: return mmio_w2130(data);  //CGWSEL
-    case 0x2131: return mmio_w2131(data);  //CGADDSUB
-    case 0x2132: return mmio_w2132(data);  //COLDATA
-    case 0x2133: return mmio_w2133(data);  //SETINI
+  switch(addr & 0x3f) {
+    case 0x00: return mmio_w2100(data);  //INIDISP
+    case 0x01: return mmio_w2101(data);  //OBSEL
+    case 0x02: return mmio_w2102(data);  //OAMADDL
+    case 0x03: return mmio_w2103(data);  //OAMADDH
+    case 0x04: return mmio_w2104(data);  //OAMDATA
+    case 0x05: return mmio_w2105(data);  //BGMODE
+    case 0x06: return mmio_w2106(data);  //MOSAIC
+    case 0x07: return mmio_w2107(data);  //BG1SC
+    case 0x08: return mmio_w2108(data);  //BG2SC
+    case 0x09: return mmio_w2109(data);  //BG3SC
+    case 0x0a: return mmio_w210a(data);  //BG4SC
+    case 0x0b: return mmio_w210b(data);  //BG12NBA
+    case 0x0c: return mmio_w210c(data);  //BG34NBA
+    case 0x0d: return mmio_w210d(data);  //BG1HOFS
+    case 0x0e: return mmio_w210e(data);  //BG1VOFS
+    case 0x0f: return mmio_w210f(data);  //BG2HOFS
+    case 0x10: return mmio_w2110(data);  //BG2VOFS
+    case 0x11: return mmio_w2111(data);  //BG3HOFS
+    case 0x12: return mmio_w2112(data);  //BG3VOFS
+    case 0x13: return mmio_w2113(data);  //BG4HOFS
+    case 0x14: return mmio_w2114(data);  //BG4VOFS
+    case 0x15: return mmio_w2115(data);  //VMAIN
+    case 0x16: return mmio_w2116(data);  //VMADDL
+    case 0x17: return mmio_w2117(data);  //VMADDH
+    case 0x18: return mmio_w2118(data);  //VMDATAL
+    case 0x19: return mmio_w2119(data);  //VMDATAH
+    case 0x1a: return mmio_w211a(data);  //M7SEL
+    case 0x1b: return mmio_w211b(data);  //M7A
+    case 0x1c: return mmio_w211c(data);  //M7B
+    case 0x1d: return mmio_w211d(data);  //M7C
+    case 0x1e: return mmio_w211e(data);  //M7D
+    case 0x1f: return mmio_w211f(data);  //M7X
+    case 0x20: return mmio_w2120(data);  //M7Y
+    case 0x21: return mmio_w2121(data);  //CGADD
+    case 0x22: return mmio_w2122(data);  //CGDATA
+    case 0x23: return mmio_w2123(data);  //W12SEL
+    case 0x24: return mmio_w2124(data);  //W34SEL
+    case 0x25: return mmio_w2125(data);  //WOBJSEL
+    case 0x26: return mmio_w2126(data);  //WH0
+    case 0x27: return mmio_w2127(data);  //WH1
+    case 0x28: return mmio_w2128(data);  //WH2
+    case 0x29: return mmio_w2129(data);  //WH3
+    case 0x2a: return mmio_w212a(data);  //WBGLOG
+    case 0x2b: return mmio_w212b(data);  //WOBJLOG
+    case 0x2c: return mmio_w212c(data);  //TM
+    case 0x2d: return mmio_w212d(data);  //TS
+    case 0x2e: return mmio_w212e(data);  //TMW
+    case 0x2f: return mmio_w212f(data);  //TSW
+    case 0x30: return mmio_w2130(data);  //CGWSEL
+    case 0x31: return mmio_w2131(data);  //CGADDSUB
+    case 0x32: return mmio_w2132(data);  //COLDATA
+    case 0x33: return mmio_w2133(data);  //SETINI
   }
 }
 

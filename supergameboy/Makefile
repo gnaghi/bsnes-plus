@@ -1,15 +1,16 @@
 include nall/Makefile
 
-c     := $(compiler) -std=gnu99
-cpp   := $(subst cc,++,$(compiler)) -std=gnu++0x
+c     := $(compiler) -x c -std=gnu99
+cpp   := $(compiler) -std=gnu++0x
 flags := -O3 -fomit-frame-pointer -I. -Icommon -Ilibgambatte/include -Ilibgambatte/src
 link  :=
 
-ifeq ($(platform),osx)
-  flags := -fPIC $(flags)
-else ifeq ($(platform),x)
+ifeq ($(platform),x)
   flags := -fPIC $(flags)
   link += -s
+else ifeq ($(platform),osx)
+  flags += -fPIC -march=native -mmacosx-version-min=10.10
+  link += -F/usr/local/lib -mmacosx-version-min=10.10
 endif
 
 objects := supergameboy
@@ -110,12 +111,12 @@ else
 endif
 
 install:
-ifeq ($(platform),osx)
-	cp libsupergameboy.dylib /usr/local/lib/libsupergameboy.dylib
-else
+ifeq ($(platform),x)
 	install -D -m 755 libsupergameboy.a $(DESTDIR)$(prefix)/lib
 	install -D -m 755 libsupergameboy.so $(DESTDIR)$(prefix)/lib
 	ldconfig -n $(DESTDIR)$(prefix)/lib
+else
+	@echo Install not available for current platform
 endif
 
 clean:

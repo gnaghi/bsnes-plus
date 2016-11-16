@@ -2,6 +2,7 @@ struct Memory {
   virtual inline unsigned size() const;
   virtual uint8 read(unsigned addr) = 0;
   virtual void write(unsigned addr, uint8 data) = 0;
+  static alwaysinline bool debugger_access();
 };
 
 struct MMIO {
@@ -58,8 +59,13 @@ private:
 };
 
 struct MMIOAccess : Memory {
+  enum : unsigned { Min = 0x2000, Max = 0x4fff };
+
   MMIO* handle(unsigned addr);
   void map(unsigned addr, MMIO &access);
+  void map(unsigned addr_lo, unsigned addr_hi, MMIO &access);
+
+  unsigned size() const;
   uint8 read(unsigned addr);
   void write(unsigned addr, uint8 data);
   MMIOAccess();
@@ -70,7 +76,6 @@ private:
 
 struct Bus {
   unsigned mirror(unsigned addr, unsigned size);
-  void map(unsigned addr, Memory &access, unsigned offset);
   enum class MapMode : unsigned { Direct, Linear, Shadow };
   void map(MapMode mode,
     uint8  bank_lo, uint8  bank_hi,
@@ -96,6 +101,8 @@ struct Bus {
   void serialize(serializer&);
 
 private:
+  inline void map(unsigned addr, Memory &access, unsigned offset);
+
   void map_reset();
   void map_xml();
   void map_system();

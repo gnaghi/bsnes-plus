@@ -18,6 +18,7 @@ public:
 
   QHBoxLayout *layout;
   QTextEdit *console;
+  QVBoxLayout *consoleLayout;
   QVBoxLayout *controlLayout;
   QHBoxLayout *commandLayout;
   QToolButton *runBreak;
@@ -38,13 +39,13 @@ public:
   void modifySystemState(unsigned);
   void echo(const char *message);
   void event();
-  void frameTick();
   void autoUpdate();
   Debugger();
 
 public slots:
   void clear();
   void synchronize();
+  void frameTick();
 
   void toggleRunStatus();
   void stepAction();
@@ -52,6 +53,8 @@ public slots:
   void stepOutAction();
 
 private:
+  inline void switchWindow();
+
   unsigned frameCounter;
 };
 

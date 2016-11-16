@@ -1,5 +1,13 @@
 #ifdef SA1_CPP
 
+uint8 SA1Debugger::disassembler_read(uint32 addr)
+{
+  debugger.bus_access = true;
+  uint8 data = sa1bus.read(addr);
+  debugger.bus_access = false;
+  return data;
+}
+
 void SA1Debugger::op_step() {
   bool break_event = false;
 
@@ -7,7 +15,6 @@ void SA1Debugger::op_step() {
   usage[regs.pc] |= UsageOpcode | (regs.p.m << 1) | (regs.p.x << 0);
   opcode_pc = regs.pc;
 
-  opcode_edge = true;
   if(debugger.step_sa1 &&
       (debugger.step_type == Debugger::StepType::StepInto ||
        (debugger.step_type >= Debugger::StepType::StepOver && debugger.call_count < 0))) {
@@ -16,6 +23,15 @@ void SA1Debugger::op_step() {
     debugger.step_type = Debugger::StepType::None;
     scheduler.exit(Scheduler::ExitReason::DebuggerEvent);
   } else {
+        
+    if (debugger.break_on_wdm) {
+      uint8 opcode = disassembler_read(opcode_pc);
+      if (opcode == 0x42) {
+        debugger.breakpoint_hit = Debugger::SoftBreakSA1;
+        debugger.break_event = Debugger::BreakEvent::BreakpointHit;
+        scheduler.exit(Scheduler::ExitReason::DebuggerEvent);
+      }
+    }
     debugger.breakpoint_test(Debugger::Breakpoint::Source::SA1Bus, Debugger::Breakpoint::Mode::Exec, regs.pc, 0x00);
   }
   if(step_event) step_event();
@@ -29,15 +45,13 @@ void SA1Debugger::op_step() {
       debugger.step_over_new = false;
     }
   
-    uint8 opcode = SA1::op_read(opcode_pc);
+    uint8 opcode = disassembler_read(opcode_pc);
     if (opcode == 0x20 || opcode == 0x22 || opcode == 0xfc) {
       debugger.call_count++;
     } else if (opcode == 0x60 || opcode == 0x6b) {
       debugger.call_count--;
     }
   }
-  
-  opcode_edge = false;
 }
 
 alwaysinline uint8_t SA1Debugger::op_readpc() {
@@ -76,7 +90,6 @@ SA1Debugger::SA1Debugger() {
   usage = new uint8[1 << 24]();
   cart_usage = &SNES::cpu.cart_usage;
   opcode_pc = 0x8000;
-  opcode_edge = false;
 }
 
 SA1Debugger::~SA1Debugger() {
@@ -150,6 +163,64 @@ bool SA1Debugger::property(unsigned id, string &name, string &value) {
   
   #undef item
   return false;
+}
+
+unsigned SA1Debugger::getRegister(unsigned id) {
+  switch (id) {
+  case RegisterPC: return regs.pc;
+  case RegisterA:  return regs.a;
+  case RegisterX:  return regs.x;
+  case RegisterY:  return regs.y;
+  case RegisterS:  return regs.s;
+  case RegisterD:  return regs.d;
+  case RegisterDB: return regs.db;
+  case RegisterP:  return regs.p;
+  }
+  
+  return 0;
+}
+
+void SA1Debugger::setRegister(unsigned id, unsigned value) {
+  switch (id) {
+  case RegisterPC: regs.pc = value; return;
+  case RegisterA:  regs.a  = value; return;
+  case RegisterX:  regs.x  = value; return;
+  case RegisterY:  regs.y  = value; return;
+  case RegisterS:  regs.s  = value; return;
+  case RegisterD:  regs.d  = value; return;
+  case RegisterDB: regs.db = value; return;
+  case RegisterP:  regs.p  = value; return;
+  }
+}
+
+bool SA1Debugger::getFlag(unsigned id) {
+  switch (id) {
+  case FlagE: return regs.e;
+  case FlagN: return regs.p.n;
+  case FlagV: return regs.p.v;
+  case FlagM: return regs.p.m;
+  case FlagX: return regs.p.x;
+  case FlagD: return regs.p.d;
+  case FlagI: return regs.p.i;
+  case FlagZ: return regs.p.z;
+  case FlagC: return regs.p.c;
+  }
+  
+  return false;
+}
+
+void SA1Debugger::setFlag(unsigned id, bool value) {
+  switch (id) {
+  case FlagE: regs.e   = value; return;
+  case FlagN: regs.p.n = value; return;
+  case FlagV: regs.p.v = value; return;
+  case FlagM: regs.p.m = value; return;
+  case FlagX: regs.p.x = value; return;
+  case FlagD: regs.p.d = value; return;
+  case FlagI: regs.p.i = value; return;
+  case FlagZ: regs.p.z = value; return;
+  case FlagC: regs.p.c = value; return;
+  }
 }
 
 #endif

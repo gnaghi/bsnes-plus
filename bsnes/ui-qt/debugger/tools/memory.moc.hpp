@@ -1,26 +1,11 @@
-class MemHexEditor : public HexEditor {
-  Q_OBJECT
-  
-public:
-  function<uint8_t (unsigned)> usage;
-  enum Usage {
-    UsageRead  = 0x80,
-    UsageWrite = 0x40,
-    UsageExec  = 0x20,
-  };
-  
-  void refresh();
-  unsigned offset() const { return editorOffset; };
-  unsigned size() const { return editorSize; };
-  void setSize(unsigned size) { HexEditor::setSize(size == -1U ? 0 : size); };
-};
+#include "qhexedit2/qhexedit.moc.hpp"
 
 class MemoryEditor : public Window {
   Q_OBJECT
 
 public:
-  QHBoxLayout *layout;
-  MemHexEditor *editor;
+  QGridLayout *layout;
+  QHexEdit *editor;
   QVBoxLayout *controlLayout;
   QComboBox *source;
   QLineEdit *addr;
@@ -35,9 +20,15 @@ public:
   QToolButton *prevUnkButton;
   QToolButton *nextUnkButton;
   
+  QToolButton *findButton;
+  QToolButton *findNextButton;
+  QToolButton *findPrevButton;
+  
   QWidget *spacer;
   QPushButton *exportButton;
   QPushButton *importButton;
+
+  QLabel *statusBar;
 
   void autoUpdate();
   void synchronize();
@@ -48,12 +39,17 @@ public:
   uint8_t usage(unsigned addr);
 
   MemoryEditor();
+  
+private:
+  QByteArray searchStr;
+  int searchPos;
 
 public slots:
   void show();
   void sourceChanged(int);
   void refresh();
   void updateOffset();
+  void showAddress(qint64);
   
   void prevCode();
   void nextCode();
@@ -63,6 +59,10 @@ public slots:
   void nextUnknown();
   void gotoPrevious(int);
   void gotoNext(int);
+  
+  void search();
+  void searchNext();
+  void searchPrev();
   
   void exportMemory();
   void importMemory();

@@ -1,7 +1,32 @@
 class SFXDebugger : public SuperFX, public ChipDebugger {
 public:
   bool property(unsigned id, string &name, string &value);
+  
+  enum Register {
+    // 0-15 == R0-R15
+    RegisterSFR = 16,
+	// TODO: some other registers here (ROMBR, etc)
+  };
+  unsigned getRegister(unsigned id);
+  void     setRegister(unsigned id, unsigned value);
 
+  enum {
+    FlagI,
+    FlagB,
+    FlagIH,
+    FlagIL,
+    FlagA2,
+    FlagA1,
+    FlagR,
+    FlagG,
+    FlagV,
+    FlagN,
+    FlagC,
+    FlagZ,
+  };
+  bool     getFlag(unsigned id);
+  void     setFlag(unsigned id, bool value);
+  
   function<void ()> step_event;
 
   enum Usage {
@@ -14,8 +39,6 @@ public:
   uint8 **cart_usage;
 
   uint24 opcode_pc;  //points to the current opcode, used to backtrace on read/write breakpoints
-
-  bool opcode_edge;  //true right before an opcode execues, used to skip over opcodes
 
   void op_step();
   

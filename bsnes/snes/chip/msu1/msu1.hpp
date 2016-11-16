@@ -21,21 +21,26 @@ private:
     AudioBusy      = 0x40,
     AudioRepeating = 0x20,
     AudioPlaying   = 0x10,
-    Revision       = 0x01,
+    AudioError     = 0x08,
+    Revision       = 0x02,
   };
 
   struct MMIO {
     uint32 data_offset;
+    uint32 data_seek_offset;
     uint32 audio_offset;
     uint32 audio_loop_offset;
 
     uint16 audio_track;
     uint8 audio_volume;
+    uint32 audio_resume_track;
+    uint32 audio_resume_offset;
 
     bool data_busy;
     bool audio_busy;
     bool audio_repeat;
     bool audio_play;
+    bool audio_error;
   } mmio;
 };
 

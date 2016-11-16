@@ -152,10 +152,9 @@ MainWindow::MainWindow() {
   tools_movies_recordFromHere = tools_movies->addAction("Record Movie (starting from here)");
 
   tools_captureScreenshot = tools->addAction("&Capture Screenshot");
+  
+  tools_captureSPC = tools->addAction("Capture &SPC Dump");
 
-  #if 0
-  //this will crash on Qt 4.6.0/Windows, because QObject::sender() returns a non-QObject*, non-null pointer
-  //since we don't know what other Qt toolkits have this bug, it's safer to just disable the feature by default
   tools->addSeparator();
 
   tools_loadState = tools->addMenu("&Load Quick State");
@@ -173,7 +172,6 @@ MainWindow::MainWindow() {
     connect(saveAction, SIGNAL(triggered()), this, SLOT(saveState()));
     tools_saveState->addAction(saveAction);
   }
-  #endif
 
   tools->addSeparator();
 
@@ -184,9 +182,10 @@ MainWindow::MainWindow() {
   tools_stateManager = tools->addAction("&State Manager ...");
 
   tools_effectToggle = tools->addAction("Effect &Toggle ...");
-  #if !defined(PROFILE_COMPATIBILITY) && !defined(PROFILE_PERFORMANCE)
-  tools_effectToggle->setVisible(false);
-  #endif
+  if(!SNES::PPU::SupportsLayerEnable && !SNES::DSP::SupportsChannelEnable)
+    tools_effectToggle->setVisible(false);
+  
+  tools_soundViewer = tools->addAction("Sound &Viewer ...");
 
   tools_debugger = tools->addAction("&Debugger ...");
   #if !defined(DEBUGGER)
@@ -220,12 +219,10 @@ MainWindow::MainWindow() {
       canvas->setAcceptDrops(true);
       canvas->setFocusPolicy(Qt::StrongFocus);
       canvas->setAttribute(Qt::WA_PaintOnScreen, true);  //disable Qt painting on focus / resize
-
-      QPalette palette;
-      palette.setColor(QPalette::Window, QColor(0, 0, 0));
-
-      canvas->setPalette(palette);
-      canvas->setAutoFillBackground(true);
+      canvas->setAttribute(Qt::WA_NoSystemBackground, true);
+      // don't let widget updates temporarily draw a parent widget over an external rendering context
+      // (this is overridden by the Qt-based video drivers)
+      canvas->setUpdatesEnabled(false);
     }
     canvasLayout->addWidget(canvas);
   }
@@ -304,10 +301,12 @@ MainWindow::MainWindow() {
   connect(tools_movies_recordFromPowerOn, SIGNAL(triggered()), this, SLOT(recordMovieFromPowerOn()));
   connect(tools_movies_recordFromHere, SIGNAL(triggered()), this, SLOT(recordMovieFromHere()));
   connect(tools_captureScreenshot, SIGNAL(triggered()), this, SLOT(saveScreenshot()));
+  connect(tools_captureSPC, SIGNAL(triggered()), this, SLOT(saveSPC()));
   connect(tools_cheatEditor, SIGNAL(triggered()), this, SLOT(showCheatEditor()));
   connect(tools_cheatFinder, SIGNAL(triggered()), this, SLOT(showCheatFinder()));
   connect(tools_stateManager, SIGNAL(triggered()), this, SLOT(showStateManager()));
   connect(tools_effectToggle, SIGNAL(triggered()), this, SLOT(showEffectToggle()));
+  connect(tools_soundViewer, SIGNAL(triggered()), this, SLOT(showSoundViewer()));
   connect(tools_debugger, SIGNAL(triggered()), this, SLOT(showDebugger()));
   connect(help_documentation, SIGNAL(triggered()), this, SLOT(showDocumentation()));
   connect(help_license, SIGNAL(triggered()), this, SLOT(showLicense()));
@@ -588,15 +587,20 @@ void MainWindow::saveScreenshot() {
   interface.saveScreenshot = true;
 }
 
+void MainWindow::saveSPC() {
+  //tell the S-SMP core to save a SPC after the next note-on
+  interface.captureSPC();
+}
+
 void MainWindow::loadState() {
-  QAction *action = dynamic_cast<QAction*>(sender());
+  QAction *action = qobject_cast<QAction*>(sender());
   if(action == 0) return;
   unsigned slot = action->data().toUInt();
   state.load(slot);
 }
 
 void MainWindow::saveState() {
-  QAction *action = dynamic_cast<QAction*>(sender());
+  QAction *action = qobject_cast<QAction*>(sender());
   if(action == 0) return;
   unsigned slot = action->data().toUInt();
   state.save(slot);
@@ -606,6 +610,8 @@ void MainWindow::showCheatEditor()  { toolsWindow->tab->setCurrentIndex(0); tool
 void MainWindow::showCheatFinder()  { toolsWindow->tab->setCurrentIndex(1); toolsWindow->show(); }
 void MainWindow::showStateManager() { toolsWindow->tab->setCurrentIndex(2); toolsWindow->show(); }
 void MainWindow::showEffectToggle() { toolsWindow->tab->setCurrentIndex(3); toolsWindow->show(); }
+
+void MainWindow::showSoundViewer()  { soundViewerWindow->show(); }
 
 void MainWindow::showDebugger() {
   #if defined(DEBUGGER)

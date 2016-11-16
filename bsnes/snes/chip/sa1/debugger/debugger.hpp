@@ -1,7 +1,34 @@
 class SA1Debugger : public SA1, public ChipDebugger {
 public:
   bool property(unsigned id, string &name, string &value);
-
+  
+  enum {
+    RegisterPC,
+    RegisterA,
+    RegisterX,
+    RegisterY,
+    RegisterS,
+    RegisterD,
+    RegisterDB,
+    RegisterP,
+  };
+  unsigned getRegister(unsigned id);
+  void     setRegister(unsigned id, unsigned value);
+  
+  enum {
+    FlagE,
+    FlagN,
+    FlagV,
+    FlagM,
+    FlagX,
+    FlagD,
+    FlagI,
+    FlagZ,
+    FlagC,
+  };
+  bool     getFlag(unsigned id);
+  void     setFlag(unsigned id, bool value);
+  
   function<void ()> step_event;
 
   enum Usage {
@@ -17,13 +44,13 @@ public:
 
   uint24 opcode_pc;  //points to the current opcode, used to backtrace on read/write breakpoints
 
-  bool opcode_edge;  //true right before an opcode execues, used to skip over opcodes
-
   void op_step();
   uint8_t op_readpc();
   uint8 op_read(uint32 addr);
   void op_write(uint32 addr, uint8 data);
 
+  uint8 disassembler_read(uint32 addr);
+  
   SA1Debugger();
   ~SA1Debugger();
 };

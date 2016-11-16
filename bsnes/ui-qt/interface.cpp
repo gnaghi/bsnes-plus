@@ -40,9 +40,6 @@ void Interface::video_refresh(const uint16_t *data, unsigned width, unsigned hei
   }
 
   state.frame();
-  #if defined(DEBUGGER)
-  debugger->frameTick();
-  #endif
 
   //frame counter
   static signed frameCount = 0;
@@ -91,6 +88,23 @@ void Interface::captureScreenshot(uint32_t *data, unsigned pitch, unsigned width
 
   image.save(filepath(filename, config().path.data));
   utility.showMessage("Screenshot saved.");
+}
+
+void Interface::captureSPC() {
+  if(SNES::cartridge.loaded() == false) return; 
+
+  string basename = nall::basename(cartridge.fileName);
+  string filename;
+  int filenum = 0;
+  
+  do {
+    filename = basename;
+    filename << "-" << integer<3, '0'>(filenum++) << ".spc";
+  } while (file::exists(filename()));
+
+  // SPC will be saved after the next note-on event
+  SNES::smp.save_spc_dump(filename());
+  utility.showMessage(string("Saving ", filename));
 }
 
 Interface::Interface() {
